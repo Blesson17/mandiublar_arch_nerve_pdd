@@ -675,9 +675,23 @@ def build_planning_overlay(
     _, preview_top = _smooth_profile(x, preview_top, window_length=11, polyorder=3)
     _, preview_bottom = _smooth_profile(x, preview_bottom, window_length=11, polyorder=3)
     
+    # Increase inner margin of outer red line for visual separation
+    margin_factor = 0.18  # Increase margin by 18%
+    thickness = preview_bottom - preview_top
+    preview_top = np.clip(preview_top - thickness * margin_factor, 0, axial_bone.shape[0] - 1)
+    
+    # Apply strong smoothing to bottom red line
+    _, preview_bottom = _smooth_profile(x, preview_bottom, window_length=450, polyorder=3)
+    
+    # Move bottom line slightly lower
+    preview_bottom = np.clip(preview_bottom + 55, 0, axial_bone.shape[0] - 1)
+    
     # Outer contour = left lower side -> superior contour -> right lower side.
     outer_x = np.concatenate(([x[0]], x, [x[-1]]))
     outer_y = np.concatenate(([preview_bottom[0]], preview_top, [preview_bottom[-1]]))
+    
+    # Apply strong smoothing to normalize and smoothen the outline
+    _, outer_y = _smooth_profile(outer_x, outer_y, window_length=400, polyorder=3)
 
     inner_points = _profile_points(x, preview_bottom, step_target=120)
     outer_points = _profile_points(outer_x, outer_y, step_target=140)

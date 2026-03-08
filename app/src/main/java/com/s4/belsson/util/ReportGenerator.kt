@@ -272,8 +272,8 @@ class ReportGenerator(private val context: Context) {
         // ── Inner contour  (red, strokeWidth ≈ 2.2 dp) ───────────────────────
         drawSmoothPolyline(c, overlay.innerContour, Color.RED, strokeWidth = 2.2f * density)
 
-        // ── Base guide  (red, straight, strokeWidth ≈ 2.0 dp) ────────────────
-        drawStraightPolyline(c, overlay.baseGuide, Color.RED, strokeWidth = 2.0f * density)
+        // ── Base guide  (red, smooth, strokeWidth ≈ 2.0 dp) ──────────────────
+        drawSmoothPolyline(c, overlay.baseGuide, Color.RED, strokeWidth = 2.0f * density)
 
         // ── Width indicator  (blue double-line + arrowheads) ─────────────────
         overlay.widthIndicator?.let { wi ->

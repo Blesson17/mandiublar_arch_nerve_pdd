@@ -434,6 +434,28 @@ def _profile_points(x: np.ndarray, y: np.ndarray, step_target: int = 120) -> lis
     ]
 
 
+def _expand_preview_profiles(
+    top: np.ndarray,
+    bottom: np.ndarray,
+    image_height: int,
+    spread_ratio: float = 0.62,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Build aesthetically wider preview contours around the true mandibular midline.
+
+    The raw top/bottom mask edges can sit visually too close together in the app.
+    For the planning overlay preview we expand both away from the local midline so the
+    red guides have clearer spacing, while keeping a central guide exactly on the midline.
+    """
+    mid = (top + bottom) / 2.0
+    thickness = np.maximum(1.0, bottom - top)
+    half_span = np.maximum(4.0, thickness * spread_ratio)
+    preview_top = np.clip(mid - half_span, 0, image_height - 1)
+    preview_bottom = np.clip(mid + half_span, 0, image_height - 1)
+    preview_mid = (preview_top + preview_bottom) / 2.0
+    return preview_top, preview_mid, preview_bottom
+
+
 def _make_width_indicator(
     x: np.ndarray,
     top: np.ndarray,
@@ -513,19 +535,32 @@ def build_planning_overlay(
         }
 
     x, top, bottom = profiles
+    preview_top, preview_mid, preview_bottom = _expand_preview_profiles(
+        top,
+        bottom,
+        image_height=axial_bone.shape[0],
+    )
 
-    # Outer contour = left lower side → superior contour → right lower side
+    # Outer contour = left lower side → superior contour → right lower side.
+    # Use widened preview profiles so the red guides keep clearer separation.
     outer_x = np.concatenate(([x[0]], x, [x[-1]]))
-    outer_y = np.concatenate(([bottom[0]], top, [bottom[-1]]))
+    outer_y = np.concatenate(([preview_bottom[0]], preview_top, [preview_bottom[-1]]))
 
-    inner_points = _profile_points(x, bottom, step_target=120)
+    inner_points = _profile_points(x, preview_bottom, step_target=120)
     outer_points = _profile_points(outer_x, outer_y, step_target=140)
 
-    # Removed the synthetic V-shape base guide from the default preview.
-    base_guide: list[dict] = []
+    # Central guide through the arch middle section.
+    guide_trim = max(2, int(len(x) * 0.08))
+    if len(x) > guide_trim * 2 + 2:
+        guide_x = x[guide_trim:-guide_trim]
+        guide_y = preview_mid[guide_trim:-guide_trim]
+    else:
+        guide_x = x
+        guide_y = preview_mid
+    base_guide = _profile_points(guide_x, guide_y, step_target=110)
 
     measure_x = int(bone_metrics.get("measurement_location", {}).get("x", int((x[0] + x[-1]) / 2)))
-    width_indicator = _make_width_indicator(x, top, bottom, measure_x)
+    width_indicator = _make_width_indicator(x, preview_top, preview_bottom, measure_x)
 
     return {
         "outer_contour": outer_points,

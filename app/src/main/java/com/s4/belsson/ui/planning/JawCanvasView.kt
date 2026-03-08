@@ -118,7 +118,7 @@ private fun DrawScope.drawPlanningOverlay(
         drawOpenPolyline(overlay.innerContour, scaleX, scaleY, offsetX, offsetY, Color.Red, 2.2f)
     }
     if (overlay.baseGuide.isNotEmpty()) {
-        drawOpenPolyline(overlay.baseGuide, scaleX, scaleY, offsetX, offsetY, Color.Red, 2.0f, smooth = false)
+        drawOpenPolyline(overlay.baseGuide, scaleX, scaleY, offsetX, offsetY, Color.Red, 2.0f)
     }
     overlay.widthIndicator?.let {
         drawWidthIndicator(it, scaleX, scaleY, offsetX, offsetY)

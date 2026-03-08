@@ -8,7 +8,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
-
 /**
  * Generates a PDF report summarising dental implant planning results.
  */
@@ -252,99 +251,169 @@ class ReportGenerator(private val context: Context) {
     // ── Overlay rendering ──────────────────────────────────────────────────────
 
     /**
-     * Returns a new ARGB_8888 bitmap with arch path, nerve path, width indicator
-     * and measurement location drawn on top of [src].
+     * Returns a new ARGB_8888 bitmap with overlays drawn to exactly match JawCanvasView:
+     *  - Outer / inner / base contours  → red smooth polylines
+     *  - Width indicator                → blue double-line with arrowheads
+     *  - Nerve markers (fallback only)  → orange dots
      */
     private fun drawOverlaysOnBitmap(src: Bitmap, analysis: AnalysisResponse): Bitmap {
         val bmp = src.copy(Bitmap.Config.ARGB_8888, true)
         val c = Canvas(bmp)
         val w = bmp.width.toFloat()
 
-        // Stroke thickness scaled relative to image width so it's visible at any resolution
-        val strokeW = (w / 200f).coerceAtLeast(2f)
+        // Scale stroke to image resolution so lines look the same as on-screen
+        val density = (w / 400f).coerceAtLeast(1f)
 
-        // ── Arch path  (bright yellow) ─────────────────────────────────────────
-        val archPaint = Paint().apply {
-            color = Color.parseColor("#FFD600")   // vivid yellow
-            style = Paint.Style.STROKE
-            strokeWidth = strokeW * 1.5f
-            strokeJoin = Paint.Join.ROUND
-            strokeCap = Paint.Cap.ROUND
-            isAntiAlias = true
-        }
-        val archPath = analysis.archPath
-        if (archPath.size >= 2) {
-            val path = Path()
-            path.moveTo(archPath[0].x.toFloat(), archPath[0].y.toFloat())
-            for (i in 1 until archPath.size) {
-                path.lineTo(archPath[i].x.toFloat(), archPath[i].y.toFloat())
-            }
-            c.drawPath(path, archPaint)
-        }
-
-        // ── Nerve path  (bright red) ──────────────────────────────────────────
-        val nervePaint = Paint().apply {
-            color = Color.parseColor("#FF1744")   // vivid red
-            style = Paint.Style.STROKE
-            strokeWidth = strokeW
-            strokeJoin = Paint.Join.ROUND
-            strokeCap = Paint.Cap.ROUND
-            isAntiAlias = true
-            pathEffect = DashPathEffect(floatArrayOf(strokeW * 4, strokeW * 2), 0f)
-        }
-        val nervePath = analysis.nervePath
-        if (nervePath.size >= 2) {
-            val path = Path()
-            path.moveTo(nervePath[0].x.toFloat(), nervePath[0].y.toFloat())
-            for (i in 1 until nervePath.size) {
-                path.lineTo(nervePath[i].x.toFloat(), nervePath[i].y.toFloat())
-            }
-            c.drawPath(path, nervePaint)
-        }
-
-        // ── Width indicator line  (cyan) ──────────────────────────────────────
         val overlay = analysis.planningOverlay
+
+        // ── Outer contour  (red, strokeWidth ≈ 2.4 dp) ───────────────────────
+        drawSmoothPolyline(c, overlay.outerContour, Color.RED, strokeWidth = 2.4f * density)
+
+        // ── Inner contour  (red, strokeWidth ≈ 2.2 dp) ───────────────────────
+        drawSmoothPolyline(c, overlay.innerContour, Color.RED, strokeWidth = 2.2f * density)
+
+        // ── Base guide  (red, straight, strokeWidth ≈ 2.0 dp) ────────────────
+        drawStraightPolyline(c, overlay.baseGuide, Color.RED, strokeWidth = 2.0f * density)
+
+        // ── Width indicator  (blue double-line + arrowheads) ─────────────────
         overlay.widthIndicator?.let { wi ->
-            val linePaint = Paint().apply {
-                color = Color.parseColor("#00E5FF")
-                style = Paint.Style.STROKE
-                strokeWidth = strokeW
-                strokeCap = Paint.Cap.ROUND
-                isAntiAlias = true
-            }
-            c.drawLine(
-                wi.start.x.toFloat(), wi.start.y.toFloat(),
-                wi.end.x.toFloat(), wi.end.y.toFloat(),
-                linePaint
-            )
-            // Small end caps
-            val capR = strokeW * 1.5f
-            val capPaint = Paint(linePaint).apply { style = Paint.Style.FILL }
-            c.drawCircle(wi.start.x.toFloat(), wi.start.y.toFloat(), capR, capPaint)
-            c.drawCircle(wi.end.x.toFloat(), wi.end.y.toFloat(), capR, capPaint)
+            drawWidthIndicator(c, wi, density)
         }
 
-        // ── Measurement location marker  (green circle + crosshair) ───────────
-        val loc = analysis.boneMetrics.measurementLocation
-        val markerR = strokeW * 5f
-        val markerFill = Paint().apply {
-            color = Color.argb(80, 0, 230, 64)
-            style = Paint.Style.FILL
+        // ── Nerve markers — only when no planning contour is present ──────────
+        if (overlay.outerContour.isEmpty() && analysis.nervePath.isNotEmpty()) {
+            drawNerveMarkers(c, analysis.nervePath, density)
         }
-        val markerStroke = Paint().apply {
-            color = Color.parseColor("#00E640")
-            style = Paint.Style.STROKE
-            strokeWidth = strokeW
-            isAntiAlias = true
-        }
-        c.drawCircle(loc.x.toFloat(), loc.y.toFloat(), markerR, markerFill)
-        c.drawCircle(loc.x.toFloat(), loc.y.toFloat(), markerR, markerStroke)
-        // Crosshair lines
-        val ch = markerR * 1.8f
-        c.drawLine(loc.x - ch, loc.y.toFloat(), loc.x + ch, loc.y.toFloat(), markerStroke)
-        c.drawLine(loc.x.toFloat(), loc.y - ch, loc.x.toFloat(), loc.y + ch, markerStroke)
 
         return bmp
+    }
+
+    /** Smooth quadratic-bezier polyline (mirrors JawCanvasView smooth path). */
+    private fun drawSmoothPolyline(
+        c: Canvas,
+        points: List<com.s4.belsson.data.model.NervePathPoint>,
+        color: Int,
+        strokeWidth: Float,
+    ) {
+        if (points.size < 2) return
+        val paint = Paint().apply {
+            this.color = color
+            style = Paint.Style.STROKE
+            this.strokeWidth = strokeWidth
+            strokeJoin = Paint.Join.ROUND
+            strokeCap = Paint.Cap.ROUND
+            isAntiAlias = true
+        }
+        val path = Path()
+        path.moveTo(points[0].x.toFloat(), points[0].y.toFloat())
+        if (points.size < 3) {
+            points.drop(1).forEach { path.lineTo(it.x.toFloat(), it.y.toFloat()) }
+        } else {
+            for (i in 1 until points.lastIndex) {
+                val cur = points[i]
+                val nxt = points[i + 1]
+                val midX = (cur.x + nxt.x) / 2f
+                val midY = (cur.y + nxt.y) / 2f
+                path.quadTo(cur.x.toFloat(), cur.y.toFloat(), midX, midY)
+            }
+            val pen = points[points.lastIndex - 1]
+            val last = points[points.lastIndex]
+            path.quadTo(pen.x.toFloat(), pen.y.toFloat(), last.x.toFloat(), last.y.toFloat())
+        }
+        c.drawPath(path, paint)
+    }
+
+    /** Straight (non-smoothed) polyline. */
+    private fun drawStraightPolyline(
+        c: Canvas,
+        points: List<com.s4.belsson.data.model.NervePathPoint>,
+        color: Int,
+        strokeWidth: Float,
+    ) {
+        if (points.size < 2) return
+        val paint = Paint().apply {
+            this.color = color
+            style = Paint.Style.STROKE
+            this.strokeWidth = strokeWidth
+            strokeJoin = Paint.Join.ROUND
+            strokeCap = Paint.Cap.ROUND
+            isAntiAlias = true
+        }
+        val path = Path()
+        path.moveTo(points[0].x.toFloat(), points[0].y.toFloat())
+        points.drop(1).forEach { path.lineTo(it.x.toFloat(), it.y.toFloat()) }
+        c.drawPath(path, paint)
+    }
+
+    /**
+     * Blue double-line width indicator with arrowheads — mirrors JawCanvasView.drawWidthIndicator.
+     */
+    private fun drawWidthIndicator(
+        c: Canvas,
+        indicator: com.s4.belsson.data.model.OverlayLine,
+        density: Float,
+    ) {
+        val sx = indicator.start.x.toFloat()
+        val sy = indicator.start.y.toFloat()
+        val ex = indicator.end.x.toFloat()
+        val ey = indicator.end.y.toFloat()
+
+        val dx = ex - sx
+        val dy = ey - sy
+        val length = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat().coerceAtLeast(1f)
+        val nx = -dy / length
+        val ny = dx / length
+        val gap = 3f * density
+
+        val paint = Paint().apply {
+            color = Color.parseColor("#1E88E5")
+            style = Paint.Style.STROKE
+            strokeWidth = 2f * density
+            strokeCap = Paint.Cap.ROUND
+            isAntiAlias = true
+        }
+
+        // Two parallel offset lines
+        c.drawLine(sx + nx * gap, sy + ny * gap, ex + nx * gap, ey + ny * gap, paint)
+        c.drawLine(sx - nx * gap, sy - ny * gap, ex - nx * gap, ey - ny * gap, paint)
+
+        // Arrowheads at both ends
+        drawArrowHead(c, PointF(ex, ey), PointF(sx, sy), paint, density)
+        drawArrowHead(c, PointF(sx, sy), PointF(ex, ey), paint, density)
+    }
+
+    private fun drawArrowHead(c: Canvas, tip: PointF, from: PointF, paint: Paint, density: Float) {
+        val angle = Math.atan2((tip.y - from.y).toDouble(), (tip.x - from.x).toDouble()).toFloat()
+        val size = 10f * density
+        val wing = 0.45f
+        val p1x = tip.x - size * Math.cos((angle - wing).toDouble()).toFloat()
+        val p1y = tip.y - size * Math.sin((angle - wing).toDouble()).toFloat()
+        val p2x = tip.x - size * Math.cos((angle + wing).toDouble()).toFloat()
+        val p2y = tip.y - size * Math.sin((angle + wing).toDouble()).toFloat()
+        c.drawLine(tip.x, tip.y, p1x, p1y, paint)
+        c.drawLine(tip.x, tip.y, p2x, p2y, paint)
+    }
+
+    /** Orange dot markers — fallback when no planning overlay is present. */
+    private fun drawNerveMarkers(
+        c: Canvas,
+        nervePath: List<com.s4.belsson.data.model.NervePathPoint>,
+        density: Float,
+    ) {
+        val outerPaint = Paint().apply {
+            color = Color.argb(71, 255, 152, 0)   // orange 28% alpha
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        val innerPaint = Paint().apply {
+            color = Color.rgb(255, 152, 0)         // solid orange
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        nervePath.forEach { pt ->
+            c.drawCircle(pt.x.toFloat(), pt.y.toFloat(), 6f * density, outerPaint)
+            c.drawCircle(pt.x.toFloat(), pt.y.toFloat(), 3f * density, innerPaint)
+        }
     }
 
     // ── Layout helpers ─────────────────────────────────────────────────────────

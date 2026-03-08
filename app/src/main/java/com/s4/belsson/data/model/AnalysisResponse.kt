@@ -45,7 +45,9 @@ data class BoneMetrics(
     @SerialName("safe_height_mm") val safeHeightMm: Double,
     @SerialName("safety_margin_mm") val safetyMarginMm: Double,
     @SerialName("density_estimate_hu") val densityEstimateHu: Double,
-    @SerialName("measurement_location") val measurementLocation: MeasurementLocation
+    @SerialName("measurement_location") val measurementLocation: MeasurementLocation,
+    @SerialName("safety_status") val safetyStatus: String = "warning",
+    @SerialName("safety_reason") val safetyReason: String = ""
 )
 
 @Serializable

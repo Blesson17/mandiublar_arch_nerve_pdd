@@ -22,6 +22,7 @@ from dicom_processor import (
     generate_opg,
     calculate_bone_metrics,
     build_planning_overlay,
+    select_default_measurement_site,
 )
 from segmentation_model import UNetSegmentor, extract_nerve_path_2d
 
@@ -77,6 +78,8 @@ class BoneMetrics(BaseModel):
     safety_margin_mm: float
     density_estimate_hu: float
     measurement_location: dict
+    safety_status: str
+    safety_reason: str
 
 
 class AnalysisResponse(BaseModel):
@@ -184,8 +187,12 @@ async def analyze_jaw(
     tooth_coords = None
     if tooth_x is not None and tooth_y is not None:
         tooth_coords = {"x": tooth_x, "y": tooth_y}
-    elif mandible_center is not None:
-        tooth_coords = {"x": mandible_center[1], "y": mandible_center[0]}
+    else:
+        auto_site = select_default_measurement_site(volume, bone_mask, nerve_mask)
+        if auto_site is not None:
+            tooth_coords = auto_site
+        elif mandible_center is not None:
+            tooth_coords = {"x": mandible_center[1], "y": mandible_center[0]}
 
     bone_metrics = calculate_bone_metrics(
         volume, bone_mask, nerve_mask, metadata, tooth_coords

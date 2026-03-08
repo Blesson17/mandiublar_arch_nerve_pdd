@@ -202,6 +202,27 @@ def generate_opg(volume: np.ndarray, metadata: dict) -> str:
 # Bone Measurements
 # ======================================================================
 
+def _classify_measurement(width_mm: float, safe_height_mm: float) -> tuple[str, str]:
+    """
+    Backend safety classification for planning preview.
+    Kept more conservative than final surgical planning and less alarmist than before.
+    """
+    if width_mm < 4.5 or safe_height_mm < 4.0:
+        return (
+            "danger",
+            "Bone at the selected site looks limited on this preview; augmentation or an alternate site may be needed."
+        )
+    if width_mm < 6.0 or safe_height_mm < 8.0:
+        return (
+            "warning",
+            "Bone is borderline at this site; review another position or a narrower implant before deciding."
+        )
+    return (
+        "safe",
+        "Bone dimensions at this site look acceptable for preliminary implant planning."
+    )
+
+
 def calculate_bone_metrics(
     volume: np.ndarray,
     bone_mask: np.ndarray,
@@ -311,6 +332,7 @@ def calculate_bone_metrics(
         height_mm = height_px * slice_thickness
 
     safe_height_mm = max(0.0, height_mm - SAFETY_MARGIN_MM)
+    safety_status, safety_reason = _classify_measurement(width_mm, safe_height_mm)
 
     # ── Bone density estimate ────────────────────────────────────────────
     region_bone = axial_bone[
@@ -330,6 +352,8 @@ def calculate_bone_metrics(
         "safety_margin_mm":     SAFETY_MARGIN_MM,
         "density_estimate_hu":  round(density_estimate, 1),
         "measurement_location": {"x": cx, "y": cy},
+        "safety_status":        safety_status,
+        "safety_reason":        safety_reason,
     }
 
 
@@ -489,7 +513,6 @@ def build_planning_overlay(
         }
 
     x, top, bottom = profiles
-    H, W = axial_bone.shape
 
     # Outer contour = left lower side → superior contour → right lower side
     outer_x = np.concatenate(([x[0]], x, [x[-1]]))
@@ -498,16 +521,10 @@ def build_planning_overlay(
     inner_points = _profile_points(x, bottom, step_target=120)
     outer_points = _profile_points(outer_x, outer_y, step_target=140)
 
-    # Stylized base guide (V-shape) like the clinical planning view.
-    apex_x = int((x[0] + x[-1]) / 2)
-    apex_y = int(min(H - 1, bottom.max() + max(18, 0.14 * H)))
-    base_guide = [
-        {"x": int(x[0]), "y": int(bottom[0])},
-        {"x": apex_x, "y": apex_y},
-        {"x": int(x[-1]), "y": int(bottom[-1])},
-    ]
+    # Removed the synthetic V-shape base guide from the default preview.
+    base_guide: list[dict] = []
 
-    measure_x = int(bone_metrics.get("measurement_location", {}).get("x", apex_x))
+    measure_x = int(bone_metrics.get("measurement_location", {}).get("x", int((x[0] + x[-1]) / 2)))
     width_indicator = _make_width_indicator(x, top, bottom, measure_x)
 
     return {
@@ -516,3 +533,79 @@ def build_planning_overlay(
         "base_guide": base_guide,
         "width_indicator": width_indicator,
     }
+
+
+def _estimate_local_safe_height(top_y: float, bottom_y: float) -> float:
+    return max(0.0, float(bottom_y - top_y) - 2.0)
+
+
+def select_default_measurement_site(
+    volume: np.ndarray,
+    bone_mask: np.ndarray,
+    nerve_mask: np.ndarray,
+) -> dict | None:
+    """
+    Pick a sensible automatic planning site on 2-D axial scans.
+
+    Strategy:
+      - use mandibular profiles
+      - avoid the anterior midline (often thin)
+      - prefer posterior/body regions with the best local safe height
+      - return an image-space point {x, y}
+    """
+    n_slices = volume.shape[0]
+    if n_slices > 3:
+        return None
+
+    mid_slice = n_slices // 2
+    axial_bone = bone_mask[mid_slice]
+    axial_nerve = nerve_mask[mid_slice]
+    profiles = _extract_2d_mandible_profiles(axial_bone)
+    if profiles is None:
+        return None
+
+    x, top, bottom = profiles
+    if len(x) < 20:
+        return None
+
+    # Exclude the central anterior 25% and the extreme edges.
+    x_min = float(x.min())
+    x_max = float(x.max())
+    width = x_max - x_min
+    left_band = x <= x_min + 0.35 * width
+    right_band = x >= x_max - 0.35 * width
+    lateral_mask = left_band | right_band
+
+    candidate_indices = np.where(lateral_mask)[0]
+    if len(candidate_indices) == 0:
+        candidate_indices = np.arange(len(x))
+
+    best_idx = None
+    best_score = -1.0
+    for idx in candidate_indices:
+        local_top = float(top[idx])
+        local_bottom = float(bottom[idx])
+        local_width = max(0.0, local_bottom - local_top)
+
+        nerve_rows = np.where(axial_nerve[:, int(x[idx])])[0]
+        if len(nerve_rows) >= 1:
+            local_height = max(0.0, float(nerve_rows.min()) - local_top)
+        else:
+            local_height = local_width
+        local_safe = max(0.0, local_height - 2.0)
+
+        # Prefer good safe height first, then width, then being away from the centre.
+        center_bias = abs(float(x[idx]) - (x_min + x_max) / 2.0)
+        score = 3.0 * local_safe + 1.5 * local_width + 0.02 * center_bias
+        if score > best_score:
+            best_score = score
+            best_idx = int(idx)
+
+    if best_idx is None:
+        return None
+
+    return {
+        "x": int(x[best_idx]),
+        "y": int(round((top[best_idx] + bottom[best_idx]) / 2.0)),
+    }
+

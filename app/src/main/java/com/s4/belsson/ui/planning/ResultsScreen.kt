@@ -211,11 +211,16 @@ private fun MetricsCard(
     metrics: BoneMetrics,
     measurementManager: MeasurementManager
 ) {
-    val safety = measurementManager.evaluateSafety(metrics.widthMm, metrics.heightMm)
+    val safety = metrics.safetyStatus.lowercase()
     val safetyColor = when (safety) {
-        MeasurementManager.SafetyLevel.SAFE -> Color(0xFF2E7D32)
-        MeasurementManager.SafetyLevel.WARNING -> Color(0xFFF57F17)
-        MeasurementManager.SafetyLevel.DANGER -> Color(0xFFC62828)
+        "safe" -> Color(0xFF2E7D32)
+        "danger" -> Color(0xFFC62828)
+        else -> Color(0xFFF57F17)
+    }
+    val safetyLabel = when (safety) {
+        "safe" -> "✅ Safe for implant placement"
+        "danger" -> "🚫 Insufficient bone – augmentation may be needed"
+        else -> "⚠️ Borderline bone – review another site or implant size"
     }
 
     Card(
@@ -254,7 +259,6 @@ private fun MetricsCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Safety badge
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -263,12 +267,22 @@ private fun MetricsCard(
                     .padding(12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = safety.label,
-                    color = safetyColor,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = safetyLabel,
+                        color = safetyColor,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (metrics.safetyReason.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = metrics.safetyReason,
+                            color = safetyColor.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         }
     }

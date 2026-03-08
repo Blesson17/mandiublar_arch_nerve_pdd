@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.pdf.PdfDocument
 import com.s4.belsson.data.model.AnalysisResponse
-import com.s4.belsson.data.model.BoneMetrics
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -94,11 +93,6 @@ class ReportGenerator(private val context: Context) {
         y += 20f
 
         val metrics = analysis.boneMetrics
-        val mm = MeasurementManager(
-            pixelSpacingRow = analysis.metadata.pixelSpacing.getOrElse(0) { 1.0 },
-            pixelSpacingCol = analysis.metadata.pixelSpacing.getOrElse(1) { 1.0 },
-            sliceThickness = analysis.metadata.sliceThickness
-        )
 
         y = drawMetricRow(canvas, y, "Bone Width", "${metrics.widthMm} mm", bodyPaint)
         y = drawMetricRow(canvas, y, "Bone Height", "${metrics.heightMm} mm", bodyPaint)
@@ -107,19 +101,29 @@ class ReportGenerator(private val context: Context) {
         y += 10f
 
         // ── Safety Assessment ──
-        val safety = mm.evaluateSafety(metrics.widthMm, metrics.heightMm)
+        val safetyColor = when (metrics.safetyStatus.lowercase()) {
+            "safe" -> Color.parseColor("#2E7D32")
+            "danger" -> Color.parseColor("#C62828")
+            else -> Color.parseColor("#F57F17")
+        }
+        val safetyLabel = when (metrics.safetyStatus.lowercase()) {
+            "safe" -> "✅ Safe for implant placement"
+            "danger" -> "🚫 Insufficient bone – augmentation may be needed"
+            else -> "⚠️ Borderline bone – review another site or implant size"
+        }
         val safetyPaint = Paint().apply {
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             isAntiAlias = true
-            color = when (safety) {
-                MeasurementManager.SafetyLevel.SAFE -> Color.parseColor("#2E7D32")
-                MeasurementManager.SafetyLevel.WARNING -> Color.parseColor("#F57F17")
-                MeasurementManager.SafetyLevel.DANGER -> Color.parseColor("#C62828")
-            }
+            color = safetyColor
         }
-        canvas.drawText("Safety: ${safety.label}", MARGIN, y, safetyPaint)
-        y += 30f
+        canvas.drawText("Safety: $safetyLabel", MARGIN, y, safetyPaint)
+        y += 18f
+        if (metrics.safetyReason.isNotBlank()) {
+            canvas.drawText(metrics.safetyReason, MARGIN + 10f, y, bodyPaint)
+            y += 18f
+        }
+        y += 12f
 
         // ── Nerve Path ──
         canvas.drawText("Inferior Alveolar Nerve", MARGIN, y, headerPaint)
@@ -171,4 +175,3 @@ class ReportGenerator(private val context: Context) {
         return y + 18f
     }
 }
-

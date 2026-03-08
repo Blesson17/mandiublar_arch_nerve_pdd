@@ -438,7 +438,7 @@ def _expand_preview_profiles(
     top: np.ndarray,
     bottom: np.ndarray,
     image_height: int,
-    spread_ratio: float = 0.62,
+    spread_ratio: float = 0.68,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Build aesthetically wider preview contours around the true mandibular midline.
@@ -449,11 +449,33 @@ def _expand_preview_profiles(
     """
     mid = (top + bottom) / 2.0
     thickness = np.maximum(1.0, bottom - top)
-    half_span = np.maximum(4.0, thickness * spread_ratio)
+    half_span = np.maximum(5.0, thickness * spread_ratio)
     preview_top = np.clip(mid - half_span, 0, image_height - 1)
     preview_bottom = np.clip(mid + half_span, 0, image_height - 1)
-    preview_mid = (preview_top + preview_bottom) / 2.0
+    preview_mid = mid
     return preview_top, preview_mid, preview_bottom
+
+
+def _trim_overlay_profiles(
+    x: np.ndarray,
+    top: np.ndarray,
+    mid: np.ndarray,
+    bottom: np.ndarray,
+    trim_ratio: float = 0.08,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Trim unstable ends so the preview shows three clean parallel arch curves
+    instead of long tails near the mandibular edges.
+    """
+    trim = max(2, int(len(x) * trim_ratio))
+    if len(x) <= trim * 2 + 4:
+        return x, top, mid, bottom
+    return (
+        x[trim:-trim],
+        top[trim:-trim],
+        mid[trim:-trim],
+        bottom[trim:-trim],
+    )
 
 
 def _make_width_indicator(
@@ -477,7 +499,6 @@ def _make_width_indicator(
     y_inner = float(bottom[idx])
     thickness = max(1.0, y_inner - y_outer)
 
-    # Tangent from the local midline profile, then rotate to a normal.
     mid_prev = (top[idx - 1] + bottom[idx - 1]) / 2.0
     mid_next = (top[idx + 1] + bottom[idx + 1]) / 2.0
     dx = float(x[idx + 1] - x[idx - 1])
@@ -488,9 +509,9 @@ def _make_width_indicator(
     tangent = tangent / np.linalg.norm(tangent)
     normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
 
-    mid = np.array([x0, (y_outer + y_inner) / 2.0], dtype=np.float64)
-    p1 = mid - normal * (thickness / 2.0)
-    p2 = mid + normal * (thickness / 2.0)
+    mid_pt = np.array([x0, (y_outer + y_inner) / 2.0], dtype=np.float64)
+    p1 = mid_pt - normal * (thickness / 2.0)
+    p2 = mid_pt + normal * (thickness / 2.0)
 
     return {
         "start": {"x": int(round(p1[0])), "y": int(round(p1[1]))},
@@ -540,27 +561,20 @@ def build_planning_overlay(
         bottom,
         image_height=axial_bone.shape[0],
     )
+    overlay_x, overlay_top, overlay_mid, overlay_bottom = _trim_overlay_profiles(
+        x,
+        preview_top,
+        preview_mid,
+        preview_bottom,
+    )
 
-    # Outer contour = left lower side → superior contour → right lower side.
-    # Use widened preview profiles so the red guides keep clearer separation.
-    outer_x = np.concatenate(([x[0]], x, [x[-1]]))
-    outer_y = np.concatenate(([preview_bottom[0]], preview_top, [preview_bottom[-1]]))
-
-    inner_points = _profile_points(x, preview_bottom, step_target=120)
-    outer_points = _profile_points(outer_x, outer_y, step_target=140)
-
-    # Central guide through the arch middle section.
-    guide_trim = max(2, int(len(x) * 0.08))
-    if len(x) > guide_trim * 2 + 2:
-        guide_x = x[guide_trim:-guide_trim]
-        guide_y = preview_mid[guide_trim:-guide_trim]
-    else:
-        guide_x = x
-        guide_y = preview_mid
-    base_guide = _profile_points(guide_x, guide_y, step_target=110)
+    # Emit three separate left→right arch curves.
+    outer_points = _profile_points(overlay_x, overlay_top, step_target=120)
+    inner_points = _profile_points(overlay_x, overlay_bottom, step_target=120)
+    base_guide = _profile_points(overlay_x, overlay_mid, step_target=120)
 
     measure_x = int(bone_metrics.get("measurement_location", {}).get("x", int((x[0] + x[-1]) / 2)))
-    width_indicator = _make_width_indicator(x, preview_top, preview_bottom, measure_x)
+    width_indicator = _make_width_indicator(overlay_x, overlay_top, overlay_bottom, measure_x)
 
     return {
         "outer_contour": outer_points,
@@ -643,4 +657,3 @@ def select_default_measurement_site(
         "x": int(x[best_idx]),
         "y": int(round((top[best_idx] + bottom[best_idx]) / 2.0)),
     }
-

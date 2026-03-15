@@ -1,6 +1,7 @@
 package com.s4.belsson.ui.planning
 
 import android.net.Uri
+import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -19,21 +20,38 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun UploadScreen(
     uiState: PlanningUiState,
-    onFileSelected: (Uri) -> Unit,
+    onProcessRequested: (Uri, Uri) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+    var cbctUri by remember { mutableStateOf<Uri?>(null) }
+    var panoramicUri by remember { mutableStateOf<Uri?>(null) }
+
+    val cbctLauncher = rememberLauncherForActivityResult(
+        contract = OpenDocument()
     ) { uri: Uri? ->
-        uri?.let { onFileSelected(it) }
+        if (uri != null) {
+            cbctUri = uri
+        }
     }
+
+    val panoramicLauncher = rememberLauncherForActivityResult(
+        contract = OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            panoramicUri = uri
+        }
+    }
+
+    val canProcess = cbctUri != null && panoramicUri != null
+
+    val isLoading = uiState is PlanningUiState.Loading
 
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Top
     ) {
         Icon(
             imageVector = Icons.Default.Add,
@@ -53,53 +71,111 @@ fun UploadScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Upload a CBCT DICOM file (.dcm) to begin AI-assisted analysis",
+            text = "Upload your scans and process analysis",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        when (uiState) {
-            is PlanningUiState.Loading -> {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("CBCT Upload", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = {
+                            cbctLauncher.launch(
+                                arrayOf(
+                                    "application/dicom",
+                                    "application/zip",
+                                    "application/octet-stream"
+                                )
+                            )
+                        },
+                        enabled = !isLoading,
+                    ) {
+                        Text("Select File")
+                    }
+                }
                 Text(
-                    text = "Analyzing DICOM volume…\nThis may take a moment.",
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodySmall
+                    text = cbctUri?.lastPathSegment ?: "No file selected",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        }
 
-            is PlanningUiState.Error -> {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Error: ${uiState.message}",
-                        modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("Panoramic Upload", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = {
+                            panoramicLauncher.launch(
+                                arrayOf(
+                                    "application/dicom",
+                                    "image/jpeg",
+                                    "image/png"
+                                )
+                            )
+                        },
+                        enabled = !isLoading,
+                    ) {
+                        Text("Select File")
+                    }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { launcher.launch("*/*") }) {
-                    Text("Try Again")
-                }
+                Text(
+                    text = panoramicUri?.lastPathSegment ?: "No file selected",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+        }
 
-            else -> {
-                Button(
-                    onClick = { launcher.launch("*/*") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                ) {
-                    Text("Upload DICOM File", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = {
+                if (cbctUri != null && panoramicUri != null) {
+                    onProcessRequested(cbctUri!!, panoramicUri!!)
                 }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            enabled = canProcess && !isLoading,
+        ) {
+            Text("Process Both", style = MaterialTheme.typography.titleMedium)
+        }
+
+        if (isLoading) {
+            Spacer(modifier = Modifier.height(14.dp))
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Processing scan...",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        if (uiState is PlanningUiState.Error) {
+            Spacer(modifier = Modifier.height(14.dp))
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Error: ${uiState.message}",
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
             }
         }
     }

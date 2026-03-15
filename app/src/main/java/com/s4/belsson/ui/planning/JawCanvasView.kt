@@ -35,6 +35,7 @@ fun JawCanvasView(
     nervePath: List<NervePathPoint>,
     modifier: Modifier = Modifier,
     planningOverlay: PlanningOverlay = PlanningOverlay(),
+    workflow: String = "cbct_implant",
     onTap: ((x: Int, y: Int) -> Unit)? = null,
 ) {
     val displayBitmap = remember(opgBitmap) {
@@ -94,6 +95,7 @@ fun JawCanvasView(
             drawPlanningOverlay(
                 overlay = planningOverlay,
                 nervePath = nervePath,
+                workflow = workflow,
                 scaleX = imgScaleX,
                 scaleY = imgScaleY,
                 offsetX = imgLeft,
@@ -106,11 +108,35 @@ fun JawCanvasView(
 private fun DrawScope.drawPlanningOverlay(
     overlay: PlanningOverlay,
     nervePath: List<NervePathPoint>,
+    workflow: String,
     scaleX: Float,
     scaleY: Float,
     offsetX: Float,
     offsetY: Float,
 ) {
+    if (workflow == "panoramic_mandibular_canal") {
+        val orange = Color(0xFFFF9800)
+        val fallbackPath = when {
+            nervePath.isNotEmpty() -> nervePath
+            overlay.innerContour.isNotEmpty() -> overlay.innerContour
+            overlay.outerContour.isNotEmpty() -> overlay.outerContour
+            else -> overlay.baseGuide
+        }
+        if (fallbackPath.isNotEmpty()) {
+            drawOpenPolyline(
+                points = fallbackPath,
+                scaleX = scaleX,
+                scaleY = scaleY,
+                offsetX = offsetX,
+                offsetY = offsetY,
+                color = orange,
+                strokeWidth = 3.2f,
+            )
+            drawNerveMarkers(fallbackPath, scaleX, scaleY, offsetX, offsetY, orange)
+        }
+        return
+    }
+
     if (overlay.outerContour.isNotEmpty()) {
         drawOpenPolyline(overlay.outerContour, scaleX, scaleY, offsetX, offsetY, Color.Red, 2.4f)
     }
@@ -141,8 +167,11 @@ private fun DrawScope.drawOpenPolyline(
     smooth: Boolean = true,
 ) {
     if (points.size < 2) return
+    val sanePoints = points.filter { it.x in -100_000..100_000 && it.y in -100_000..100_000 }
+    if (sanePoints.size < 2) return
     fun toCanvas(p: NervePathPoint) = Offset(p.x * scaleX + offsetX, p.y * scaleY + offsetY)
-    val mapped = points.map(::toCanvas)
+    val mapped = sanePoints.map(::toCanvas).filter { it.x.isFinite() && it.y.isFinite() }
+    if (mapped.size < 2) return
 
     val path = Path()
     path.moveTo(mapped.first().x, mapped.first().y)
@@ -226,8 +255,12 @@ private fun DrawScope.drawNerveMarkers(
         p.y * scaleY + offsetY
     )
 
-    nervePath.forEach { pt ->
+    nervePath
+        .asSequence()
+        .filter { it.x in -100_000..100_000 && it.y in -100_000..100_000 }
+        .forEach { pt ->
         val c = toCanvas(pt)
+        if (!c.x.isFinite() || !c.y.isFinite()) return@forEach
         drawCircle(color = color.copy(alpha = 0.20f), radius = 4f, center = c)
         drawCircle(color = color, radius = 2f, center = c)
     }

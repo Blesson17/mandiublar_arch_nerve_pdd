@@ -37,7 +37,10 @@ fun ResultsScreen(
     onTapCoordinate: (x: Int, y: Int) -> Unit,
     onGenerateReport: () -> java.io.File?,
     onReset: () -> Unit,
-    modifier: Modifier = Modifier
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier,
+    embedded: Boolean = false,
+    showActions: Boolean = true,
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -47,8 +50,7 @@ fun ResultsScreen(
 
     Column(
         modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
+            .then(if (embedded) Modifier else Modifier.fillMaxSize().verticalScroll(scrollState))
             .padding(16.dp)
     ) {
         // ── Header ──
@@ -60,6 +62,17 @@ fun ResultsScreen(
         Text(
             text = "Patient: ${analysis.patientName}",
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = if (analysis.workflow == "panoramic_mandibular_canal") {
+                "Workflow: Panoramic mandibular canal tracing"
+            } else if (analysis.metadata.datasetType == "2d_radiograph") {
+                "Workflow: 2D slice reconstruction (not volumetric CBCT)"
+            } else {
+                "Workflow: CBCT implant planning"
+            },
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
@@ -81,12 +94,13 @@ fun ResultsScreen(
                     opgBitmap = opgBitmap,
                     nervePath = analysis.nervePath,
                     planningOverlay = activeOverlay,
+                    workflow = analysis.workflow,
                     onTap = onTapCoordinate
                 )
 
                 // Hint overlay
                 Text(
-                    text = "Tap on a region to measure",
+                    text = "",
                     color = Color.White.copy(alpha = 0.7f),
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier
@@ -158,46 +172,59 @@ fun ResultsScreen(
                 Text("Volume: ${meta.columns}×${meta.rows}×${meta.numSlices}")
                 Text("Pixel Spacing: ${meta.pixelSpacing.joinToString("×")} mm")
                 Text("Slice Thickness: ${meta.sliceThickness} mm")
+                Text("Dataset Type: ${meta.datasetType}")
+                Text("HU Calibrated: ${if (meta.isCalibratedHu) "Yes" else "No"}")
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Action Buttons ──
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = {
-                    val file = onGenerateReport()
-                    if (file != null) {
-                        val uri = FileProvider.getUriForFile(
-                            context,
-                            "${context.packageName}.fileprovider",
-                            file
-                        )
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "application/pdf")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        try {
-                            context.startActivity(intent)
-                        } catch (_: Exception) {
-                            Toast.makeText(context, "PDF saved: ${file.name}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f)
+        if (showActions) {
+            // ── Action Buttons ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Generate Report")
+                Button(
+                    onClick = {
+                        val file = onGenerateReport()
+                        if (file != null) {
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                file
+                            )
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/pdf")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "PDF saved: ${file.name}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Generate Report")
+                }
+
+                OutlinedButton(
+                    onClick = onReset,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("New Scan")
+                }
             }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
             OutlinedButton(
-                onClick = onReset,
-                modifier = Modifier.weight(1f)
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("New Scan")
+                Text("Logout")
             }
         }
 
@@ -215,11 +242,13 @@ private fun MetricsCard(
     val safetyColor = when (safety) {
         "safe" -> Color(0xFF2E7D32)
         "danger" -> Color(0xFFC62828)
+        "review" -> Color(0xFF6A1B9A)
         else -> Color(0xFFF57F17)
     }
     val safetyLabel = when (safety) {
         "safe" -> "✅ Safe for implant placement"
         "danger" -> "🚫 Insufficient bone – augmentation may be needed"
+        "review" -> "🩺 Requires clinical review"
         else -> "⚠️ Borderline bone – review another site or implant size"
     }
 

@@ -9,15 +9,20 @@ from __future__ import annotations
 
 import io
 import base64
+import shutil
 import tempfile
+import zipfile
 from pathlib import Path
+from typing import BinaryIO
 
 import numpy as np
 import pydicom
 import SimpleITK as sitk
 from scipy import ndimage
 from scipy import signal
-from skimage.morphology import skeletonize
+from skimage.feature import canny
+from skimage.filters import frangi
+from skimage.morphology import skeletonize, remove_small_objects
 from PIL import Image
 
 
@@ -53,6 +58,9 @@ def load_dicom_volume(dicom_bytes: bytes) -> tuple[np.ndarray, dict]:
     pixel_spacing = _get_pixel_spacing(ds)
     slice_thickness = float(getattr(ds, "SliceThickness", 1.0))
     patient_name = str(getattr(ds, "PatientName", "Unknown"))
+    modality = str(getattr(ds, "Modality", "")).upper()
+    # HU is meaningful for CT-like volumes; avoid treating panoramic grayscale as HU.
+    is_calibrated_hu = modality == "CT"
 
     # Try SimpleITK first (handles multi-frame well)
     try:
@@ -82,9 +90,316 @@ def load_dicom_volume(dicom_bytes: bytes) -> tuple[np.ndarray, dict]:
         "rows": int(getattr(ds, "Rows", volume.shape[-2])),
         "columns": int(getattr(ds, "Columns", volume.shape[-1])),
         "num_slices": volume.shape[0],
+        "modality": modality or "UNKNOWN",
+        "is_calibrated_hu": is_calibrated_hu,
     }
 
     Path(tmp_path).unlink(missing_ok=True)
+    return volume, metadata
+
+
+def load_cbct_series(input_path: str | Path) -> tuple[np.ndarray, dict]:
+    """
+    Load a CBCT study from a folder of DICOM slices or a ZIP archive.
+
+    Returns
+    -------
+    volume : np.ndarray
+        3D array with shape (num_slices, rows, cols)
+    metadata : dict
+        Same schema used by load_dicom_volume for downstream compatibility.
+    """
+    src_path = Path(input_path)
+    if not src_path.exists():
+        raise FileNotFoundError(f"CBCT input path does not exist: {src_path}")
+
+    if src_path.is_dir():
+        return _load_cbct_series_from_dir(src_path)
+
+    if src_path.is_file() and src_path.suffix.lower() == ".zip":
+        with src_path.open("rb") as fp:
+            return load_cbct_zip(fp)
+
+    raise ValueError("CBCT input must be a folder or a .zip archive.")
+
+
+def load_cbct_zip(zip_source: bytes | BinaryIO) -> tuple[np.ndarray, dict]:
+    """
+    Load a CBCT series from ZIP payload containing many DICOM slices.
+
+    Supports either raw ZIP bytes or an already-open binary stream.
+    """
+    temp_dir = Path(tempfile.mkdtemp(prefix="cbct_zip_"))
+    extract_root = temp_dir / "extracted"
+    extract_root.mkdir(parents=True, exist_ok=True)
+
+    try:
+        zip_stream: BinaryIO
+        if isinstance(zip_source, (bytes, bytearray)):
+            if not zip_source:
+                raise ValueError("Empty ZIP payload received for CBCT series.")
+            zip_stream = io.BytesIO(zip_source)
+        else:
+            zip_stream = zip_source
+
+        if hasattr(zip_stream, "seek"):
+            zip_stream.seek(0)
+
+        with zipfile.ZipFile(zip_stream, "r") as zf:
+            _safe_extract_zip(zf, extract_root)
+        print("Detected ZIP CBCT upload")
+        return _load_cbct_series_from_dir(extract_root)
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Uploaded ZIP is invalid or corrupted.") from exc
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def _safe_extract_zip(zf: zipfile.ZipFile, extract_root: Path) -> None:
+    """Safely extract archive entries while preventing path traversal."""
+    root_resolved = extract_root.resolve()
+    for member in zf.infolist():
+        member_name = member.filename
+        if not member_name or member_name.endswith("/"):
+            continue
+
+        member_path = Path(member_name)
+        if member_path.is_absolute() or any(part == ".." for part in member_path.parts):
+            raise ValueError(f"Unsafe ZIP entry path detected: {member_name}")
+        if _is_hidden_or_system_path(member_path):
+            continue
+        if member_path.suffix.lower() != ".dcm":
+            continue
+
+        target_path = (extract_root / member_path).resolve()
+        if root_resolved not in target_path.parents and target_path != root_resolved:
+            raise ValueError(f"Unsafe ZIP entry path detected: {member_name}")
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(member, "r") as src, open(target_path, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+
+
+def _is_hidden_or_system_path(path: Path) -> bool:
+    return any(part.startswith(".") or part == "__MACOSX" for part in path.parts)
+
+
+def _load_cbct_series_from_dir(root: Path) -> tuple[np.ndarray, dict]:
+    dicom_files = sorted(
+        [
+            p
+            for p in root.rglob("*")
+            if p.is_file() and p.suffix.lower() == ".dcm" and not _is_hidden_or_system_path(p.relative_to(root))
+        ]
+    )
+    if not dicom_files:
+        raise ValueError("No .dcm files found in CBCT study input.")
+    print("Found", len(dicom_files), "DICOM slices")
+
+    slices = []
+    rows = None
+    cols = None
+
+    for fallback_idx, file_path in enumerate(dicom_files):
+        print("Reading DICOM:", str(file_path))
+        try:
+            ds = pydicom.dcmread(str(file_path), force=True)
+        except Exception:
+            continue
+
+        try:
+            arr = ds.pixel_array
+        except Exception:
+            continue
+
+        # Enhanced/multi-frame CBCT may store the full volume in one file.
+        n_frames = int(getattr(ds, "NumberOfFrames", 1) or 1)
+        if n_frames > 1 and arr.ndim >= 3:
+            print("Pixel array shape:", arr.shape)
+            volume = arr.astype(np.float64)
+            slope = float(getattr(ds, "RescaleSlope", 1))
+            intercept = float(getattr(ds, "RescaleIntercept", 0))
+            volume = volume * slope + intercept
+
+            if volume.ndim == 4:
+                # If channels are present, collapse to grayscale to keep (Z, H, W).
+                volume = np.mean(volume, axis=-1)
+            if volume.ndim != 3:
+                raise ValueError(f"Unsupported multi-frame CBCT shape: {volume.shape}")
+
+            modality = str(getattr(ds, "Modality", "")).upper() or "UNKNOWN"
+            metadata = {
+                "pixel_spacing": _get_pixel_spacing(ds),
+                "slice_thickness": float(getattr(ds, "SliceThickness", 1.0)),
+                "patient_name": str(getattr(ds, "PatientName", "Unknown")),
+                "rows": int(volume.shape[1]),
+                "columns": int(volume.shape[2]),
+                "num_slices": int(volume.shape[0]),
+                "modality": modality,
+                "is_calibrated_hu": modality == "CT",
+            }
+            return volume, metadata
+
+        arr = arr.astype(np.float64)
+        print("Pixel array shape:", arr.shape)
+        if arr.ndim != 2:
+            continue
+
+        slope = float(getattr(ds, "RescaleSlope", 1))
+        intercept = float(getattr(ds, "RescaleIntercept", 0))
+        arr = arr * slope + intercept
+
+        if rows is None:
+            rows, cols = arr.shape
+        if arr.shape != (rows, cols):
+            continue
+
+        z_pos = None
+        if hasattr(ds, "ImagePositionPatient") and len(ds.ImagePositionPatient) >= 3:
+            try:
+                z_pos = float(ds.ImagePositionPatient[2])
+            except Exception:
+                z_pos = None
+
+        instance_number = None
+        if hasattr(ds, "InstanceNumber"):
+            try:
+                instance_number = float(ds.InstanceNumber)
+            except Exception:
+                instance_number = None
+
+        if z_pos is not None:
+            sort_key = (0, z_pos)
+        elif instance_number is not None:
+            sort_key = (1, instance_number)
+        else:
+            sort_key = (2, float(fallback_idx))
+
+        slices.append(
+            {
+                "arr": arr,
+                "ds": ds,
+                "z": z_pos,
+                "sort_key": sort_key,
+            }
+        )
+
+    if not slices:
+        print("No slices decoded -- trying SimpleITK fallback")
+        sitk_volume, sitk_ds = _load_cbct_with_sitk_fallback(root)
+        if sitk_volume is not None and sitk_ds is not None:
+            modality = str(getattr(sitk_ds, "Modality", "")).upper() or "UNKNOWN"
+            metadata = {
+                "pixel_spacing": _get_pixel_spacing(sitk_ds),
+                "slice_thickness": float(getattr(sitk_ds, "SliceThickness", 1.0)),
+                "patient_name": str(getattr(sitk_ds, "PatientName", "Unknown")),
+                "rows": int(sitk_volume.shape[1]),
+                "columns": int(sitk_volume.shape[2]),
+                "num_slices": int(sitk_volume.shape[0]),
+                "modality": modality,
+                "is_calibrated_hu": modality == "CT",
+            }
+            return sitk_volume, metadata
+        raise ValueError("No readable 2D DICOM slices found in CBCT study input.")
+
+    if len(slices) < 5:
+        raise ValueError("Not enough valid CBCT slices")
+
+    slices.sort(key=lambda s: s["sort_key"])
+    volume = np.stack([s["arr"] for s in slices], axis=0)
+
+    if volume.shape[0] > 600:
+        volume = volume[::2]
+
+    first_ds = slices[0]["ds"]
+    pixel_spacing = _get_pixel_spacing(first_ds)
+    slice_thickness = float(getattr(first_ds, "SliceThickness", 1.0))
+
+    z_positions = [s["z"] for s in slices if s["z"] is not None]
+    if len(z_positions) >= 2:
+        z_sorted = np.asarray(sorted(z_positions), dtype=np.float64)
+        diffs = np.abs(np.diff(z_sorted))
+        diffs = diffs[diffs > 1e-6]
+        if len(diffs) > 0:
+            slice_thickness = float(np.median(diffs))
+
+    if len(slices) > 600:
+        slice_thickness *= 2.0
+
+    modality = str(getattr(first_ds, "Modality", "")).upper() or "UNKNOWN"
+    metadata = {
+        "pixel_spacing": pixel_spacing,
+        "slice_thickness": slice_thickness,
+        "patient_name": str(getattr(first_ds, "PatientName", "Unknown")),
+        "rows": int(volume.shape[1]),
+        "columns": int(volume.shape[2]),
+        "num_slices": int(volume.shape[0]),
+        "modality": modality,
+        "is_calibrated_hu": modality == "CT",
+    }
+    return volume, metadata
+
+
+def _load_cbct_with_sitk_fallback(root: Path) -> tuple[np.ndarray | None, object | None]:
+    dicom_files = sorted(
+        [
+            p
+            for p in root.rglob("*")
+            if p.is_file() and p.suffix.lower() == ".dcm" and not _is_hidden_or_system_path(p.relative_to(root))
+        ]
+    )
+    if not dicom_files:
+        return None, None
+
+    try:
+        series_reader = sitk.ImageSeriesReader()
+        series_ids = series_reader.GetGDCMSeriesIDs(str(root)) or []
+        if series_ids:
+            series_files = series_reader.GetGDCMSeriesFileNames(str(root), series_ids[0])
+            if series_files:
+                series_reader.SetFileNames(list(series_files))
+                image = series_reader.Execute()
+                volume = sitk.GetArrayFromImage(image).astype(np.float64)
+                if volume.ndim == 2:
+                    volume = volume[np.newaxis, :, :]
+                if volume.ndim == 3:
+                    ds = pydicom.dcmread(str(series_files[0]), force=True)
+                    return volume, ds
+    except Exception:
+        pass
+
+    try:
+        image = sitk.ReadImage(str(dicom_files[0]))
+        volume = sitk.GetArrayFromImage(image).astype(np.float64)
+        if volume.ndim == 2:
+            volume = volume[np.newaxis, :, :]
+        if volume.ndim == 3:
+            ds = pydicom.dcmread(str(dicom_files[0]), force=True)
+            return volume, ds
+    except Exception:
+        return None, None
+
+    return None, None
+
+
+def load_image_projection(image_bytes: bytes) -> tuple[np.ndarray, dict]:
+    """
+    Load a 2-D panoramic image (png/jpeg) and map it to a pseudo-volume
+    shape of (1, H, W) so downstream processing can reuse the same pipeline.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("L")
+    arr = np.asarray(img, dtype=np.float64)
+    volume = arr[np.newaxis, :, :]
+    metadata = {
+        "pixel_spacing": [1.0, 1.0],
+        "slice_thickness": 1.0,
+        "patient_name": "Unknown",
+        "rows": int(arr.shape[0]),
+        "columns": int(arr.shape[1]),
+        "num_slices": 1,
+        "modality": "OT",
+        "is_calibrated_hu": False,
+    }
     return volume, metadata
 
 
@@ -199,6 +514,390 @@ def generate_opg(volume: np.ndarray, metadata: dict) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
+def detect_mandibular_canal_path_2d(
+    volume: np.ndarray,
+    metadata: dict,
+) -> list[dict]:
+    """
+    Detect mandibular canal centreline on panoramic-like 2D inputs.
+
+    Pipeline:
+      1) adaptive mandible segmentation
+      2) inferior cortical border extraction
+      3) radiolucent tubular candidate detection with Frangi
+      4) skeleton longest-path extraction
+      5) smoothing + subsampling
+      6) anatomical validation + fallback parallel path
+    """
+    if volume.ndim != 3 or volume.shape[0] < 1:
+        return []
+
+    img = volume[volume.shape[0] // 2].astype(np.float64)
+    H, W = img.shape
+
+    mandible_mask = _segment_mandible_2d(img)
+    if not mandible_mask.any():
+        return []
+
+    inferior_border = _inferior_border_curve(img, mandible_mask)
+    if inferior_border is None:
+        return []
+
+    top_border = _superior_border_curve(mandible_mask)
+
+    canal_candidate = _detect_canal_candidates(img, mandible_mask, inferior_border)
+    path = _extract_longest_skeleton_path(canal_candidate)
+
+    if path:
+        path = _smooth_and_sample_path(path, target_points=100)
+
+    if not _validate_canal_path(path, inferior_border, top_border):
+        path = _fallback_parallel_path(inferior_border, top_border)
+
+    return path
+
+
+def _segment_mandible_2d(img: np.ndarray) -> np.ndarray:
+    p70 = float(np.percentile(img, 70))
+    p85 = float(np.percentile(img, 85))
+    threshold = p70 + 0.55 * (p85 - p70)
+
+    mask = img > threshold
+    mask = ndimage.binary_closing(mask, iterations=3)
+    mask = ndimage.binary_fill_holes(mask)
+
+    labelled, n_comp = ndimage.label(mask)
+    if n_comp == 0:
+        return np.zeros_like(mask, dtype=bool)
+
+    best_idx = 0
+    best_score = -1.0
+    H, W = mask.shape
+    for idx in range(1, n_comp + 1):
+        comp = labelled == idx
+        area = float(comp.sum())
+        if area < 300:
+            continue
+        rows, cols = np.where(comp)
+        if len(rows) == 0:
+            continue
+        cy = float(rows.mean())
+        width = float(cols.max() - cols.min() + 1)
+        lower_bias = float((rows > H * 0.35).mean())
+        score = area * (0.65 + lower_bias) + 0.12 * width + 0.03 * cy
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+
+    if best_idx == 0:
+        return np.zeros_like(mask, dtype=bool)
+
+    comp = labelled == best_idx
+    return ndimage.binary_fill_holes(comp)
+
+
+def _inferior_border_curve(img: np.ndarray, mandible_mask: np.ndarray) -> np.ndarray | None:
+    H, W = img.shape
+    grad_v = np.abs(ndimage.sobel(img.astype(np.float64), axis=0))
+    grad_v = grad_v / (grad_v.max() + 1e-6)
+
+    edges = canny(grad_v, sigma=1.2)
+    edges &= ndimage.binary_dilation(mandible_mask, iterations=1)
+
+    cols = np.where(mandible_mask.any(axis=0))[0]
+    if len(cols) < 25:
+        return None
+
+    border = np.full(W, np.nan, dtype=np.float64)
+    for x in cols:
+        mand_rows = np.where(mandible_mask[:, x])[0]
+        if len(mand_rows) < 3:
+            continue
+        lower_limit = int(mand_rows.max())
+        upper_limit = int(max(mand_rows.min(), lower_limit - max(18, len(mand_rows) // 2)))
+
+        edge_rows = np.where(edges[:, x])[0]
+        edge_rows = edge_rows[(edge_rows >= upper_limit) & (edge_rows <= lower_limit)]
+        if len(edge_rows) > 0:
+            border[x] = float(edge_rows.max())
+        else:
+            border[x] = float(lower_limit)
+
+    valid = np.where(~np.isnan(border))[0]
+    if len(valid) < 25:
+        return None
+
+    border = np.interp(np.arange(W), valid, border[valid])
+    border = ndimage.gaussian_filter1d(border, sigma=3.0, mode="nearest")
+    return np.clip(border, 0, H - 1)
+
+
+def _superior_border_curve(mandible_mask: np.ndarray) -> np.ndarray:
+    H, W = mandible_mask.shape
+    top = np.full(W, np.nan, dtype=np.float64)
+    cols = np.where(mandible_mask.any(axis=0))[0]
+    for x in cols:
+        rows = np.where(mandible_mask[:, x])[0]
+        if len(rows) >= 2:
+            top[x] = float(rows.min())
+
+    valid = np.where(~np.isnan(top))[0]
+    if len(valid) == 0:
+        return np.zeros(W, dtype=np.float64)
+    top = np.interp(np.arange(W), valid, top[valid])
+    top = ndimage.gaussian_filter1d(top, sigma=2.0, mode="nearest")
+    return np.clip(top, 0, H - 1)
+
+
+def _detect_canal_candidates(
+    img: np.ndarray,
+    mandible_mask: np.ndarray,
+    inferior_border: np.ndarray,
+) -> np.ndarray:
+    H, W = img.shape
+    norm = img - float(img.min())
+    norm = norm / (float(norm.max()) + 1e-6)
+
+    # Radiolucent structures are darker; invert and band-pass for tubular texture.
+    dark = 1.0 - norm
+    low = ndimage.gaussian_filter(dark, sigma=1.0)
+    high = ndimage.gaussian_filter(dark, sigma=4.0)
+    band = np.clip(low - high, 0.0, 1.0)
+
+    # Frangi response over expected canal calibre scale (approximately 3-6 px).
+    vessel = frangi(band, sigmas=np.linspace(1.0, 3.0, 5), black_ridges=False)
+    vessel = np.nan_to_num(vessel, nan=0.0, posinf=0.0, neginf=0.0)
+
+    threshold = float(np.percentile(vessel[mandible_mask], 82)) if mandible_mask.any() else 0.0
+    candidate = vessel > threshold
+    candidate &= mandible_mask
+
+    # Constrain to 10-25 px superior to inferior border.
+    corridor = np.zeros_like(candidate, dtype=bool)
+    for x in range(W):
+        y_inf = int(round(inferior_border[x]))
+        y_top = max(0, y_inf - 25)
+        y_bottom = max(0, y_inf - 10)
+        if y_bottom <= y_top:
+            continue
+        corridor[y_top:y_bottom + 1, x] = True
+
+    candidate &= corridor
+
+    # Remove components that touch near-inferior cortex zone.
+    near_border_zone = np.zeros_like(candidate, dtype=bool)
+    for x in range(W):
+        y_inf = int(round(inferior_border[x]))
+        near_border_zone[max(0, y_inf - 5):min(H, y_inf + 2), x] = True
+
+    labelled, n_comp = ndimage.label(candidate)
+    if n_comp == 0:
+        return np.zeros_like(candidate, dtype=bool)
+
+    cleaned = np.zeros_like(candidate, dtype=bool)
+    for idx in range(1, n_comp + 1):
+        comp = labelled == idx
+        if comp.sum() < 20:
+            continue
+        if (comp & near_border_zone).any():
+            continue
+        cleaned |= comp
+
+    cleaned = remove_small_objects(cleaned.astype(bool), min_size=30)
+    return cleaned.astype(bool)
+
+
+def _extract_longest_skeleton_path(mask: np.ndarray) -> list[dict]:
+    if not mask.any():
+        return []
+
+    skeleton = skeletonize(mask).astype(bool)
+    labelled, n_comp = ndimage.label(skeleton)
+    if n_comp == 0:
+        return []
+
+    best_path: list[tuple[int, int]] = []
+    for idx in range(1, n_comp + 1):
+        comp = labelled == idx
+        coords = np.argwhere(comp)
+        if len(coords) < 18:
+            continue
+
+        nodes = {(int(r), int(c)) for r, c in coords}
+        neighbors: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        for r, c in nodes:
+            nn = []
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    if dr == 0 and dc == 0:
+                        continue
+                    cand = (r + dr, c + dc)
+                    if cand in nodes:
+                        nn.append(cand)
+            neighbors[(r, c)] = nn
+
+        endpoints = [k for k, v in neighbors.items() if len(v) == 1]
+        seeds = endpoints if len(endpoints) >= 2 else list(nodes)
+        if not seeds:
+            continue
+
+        start = seeds[0]
+        far_a, _ = _bfs_farthest(start, neighbors)
+        far_b, parent = _bfs_farthest(far_a, neighbors)
+        path_nodes = _reconstruct_path(far_b, far_a, parent)
+
+        if len(path_nodes) > len(best_path):
+            best_path = path_nodes
+
+    if len(best_path) < 18:
+        return []
+
+    # Convert row-col to x-y and left-right ordering.
+    pts = [{"x": int(c), "y": int(r)} for r, c in best_path]
+    pts = sorted(pts, key=lambda p: p["x"])
+    return pts
+
+
+def _bfs_farthest(
+    start: tuple[int, int],
+    neighbors: dict[tuple[int, int], list[tuple[int, int]]],
+) -> tuple[tuple[int, int], dict[tuple[int, int], tuple[int, int] | None]]:
+    from collections import deque
+
+    q = deque([start])
+    parent: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
+    dist = {start: 0}
+    far = start
+
+    while q:
+        node = q.popleft()
+        if dist[node] > dist[far]:
+            far = node
+        for nxt in neighbors.get(node, []):
+            if nxt in parent:
+                continue
+            parent[nxt] = node
+            dist[nxt] = dist[node] + 1
+            q.append(nxt)
+    return far, parent
+
+
+def _reconstruct_path(
+    end: tuple[int, int],
+    start: tuple[int, int],
+    parent: dict[tuple[int, int], tuple[int, int] | None],
+) -> list[tuple[int, int]]:
+    path = []
+    cur = end
+    while cur is not None:
+        path.append(cur)
+        if cur == start:
+            break
+        cur = parent.get(cur)
+    path.reverse()
+    return path
+
+
+def _smooth_and_sample_path(path: list[dict], target_points: int = 100) -> list[dict]:
+    if len(path) < 8:
+        return path
+
+    xs = np.asarray([p["x"] for p in path], dtype=np.float64)
+    ys = np.asarray([p["y"] for p in path], dtype=np.float64)
+
+    order = np.argsort(xs)
+    xs = xs[order]
+    ys = ys[order]
+
+    x_unique = np.unique(xs)
+    y_unique = np.interp(x_unique, xs, ys)
+    if len(x_unique) < 7:
+        return [{"x": int(round(x)), "y": int(round(y))} for x, y in zip(x_unique, y_unique)]
+
+    window = min(25, max(15, (len(x_unique) // 4) | 1))
+    if window >= len(x_unique):
+        window = len(x_unique) - 1 if len(x_unique) % 2 == 0 else len(x_unique)
+    if window < 5:
+        window = 5
+    if window % 2 == 0:
+        window += 1
+
+    y_smooth = signal.savgol_filter(y_unique, window_length=window, polyorder=3, mode="interp")
+
+    n_out = int(np.clip(target_points, 80, 120))
+    sample_x = np.linspace(x_unique.min(), x_unique.max(), n_out)
+    sample_y = np.interp(sample_x, x_unique, y_smooth)
+
+    return [{"x": int(round(x)), "y": int(round(y))} for x, y in zip(sample_x, sample_y)]
+
+
+def _validate_canal_path(
+    path: list[dict],
+    inferior_border: np.ndarray,
+    top_border: np.ndarray,
+) -> bool:
+    if len(path) < 20:
+        return False
+
+    W = len(inferior_border)
+    xs = np.asarray([p["x"] for p in path], dtype=np.float64)
+    ys = np.asarray([p["y"] for p in path], dtype=np.float64)
+
+    xs_clip = np.clip(xs, 0, W - 1)
+    y_inf = np.interp(xs_clip, np.arange(W), inferior_border)
+    y_top = np.interp(xs_clip, np.arange(W), top_border)
+
+    delta = y_inf - ys
+    if np.any(delta < 5.0):
+        return False
+
+    # Canal should stay around lower-third band, not near root region.
+    thickness = np.maximum(1.0, y_inf - y_top)
+    rel = (ys - y_top) / thickness
+    if float((rel < 0.38).mean()) > 0.2:
+        return False
+
+    if float(np.median(delta)) < 10.0 or float(np.median(delta)) > 25.0:
+        return False
+
+    # Excessive curvature check.
+    if len(xs) > 10:
+        ord_idx = np.argsort(xs)
+        xs_ord = xs[ord_idx]
+        ys_ord = ys[ord_idx]
+        x_unique = np.unique(xs_ord)
+        y_unique = np.interp(x_unique, xs_ord, ys_ord)
+        if len(x_unique) > 9:
+            dy = np.gradient(y_unique)
+            ddy = np.gradient(dy)
+            if float(np.max(np.abs(ddy))) > 1.8:
+                return False
+
+    return True
+
+
+def _fallback_parallel_path(
+    inferior_border: np.ndarray,
+    top_border: np.ndarray,
+) -> list[dict]:
+    W = len(inferior_border)
+    x0 = int(W * 0.10)
+    x1 = int(W * 0.88)
+    xs = np.linspace(x0, x1, 100)
+
+    y_inf = np.interp(xs, np.arange(W), inferior_border)
+    y_top = np.interp(xs, np.arange(W), top_border)
+    thickness = np.maximum(1.0, y_inf - y_top)
+
+    # Parallel model path offset 15-20 px and constrained to lower-third corridor.
+    target_offset = np.clip(0.42 * thickness, 15.0, 20.0)
+    ys = y_inf - target_offset
+    ys = np.clip(ys, y_top + 0.35 * thickness, y_inf - 8.0)
+    ys = ndimage.gaussian_filter1d(ys, sigma=2.0, mode="nearest")
+
+    return [{"x": int(round(x)), "y": int(round(y))} for x, y in zip(xs, ys)]
+
+
 # ======================================================================
 # Bone Measurements
 # ======================================================================
@@ -238,104 +937,128 @@ def calculate_bone_metrics(
     Handles both 2-D single-slice and 3-D multi-slice volumes automatically.
     """
     pixel_spacing = metadata["pixel_spacing"]   # [row_sp, col_sp] in mm
-    slice_thickness = metadata["slice_thickness"]  # mm
-
     n_slices, H, W = volume.shape
-    is_2d = n_slices <= 3
+    is_cbct = n_slices >= 20
 
     if tooth_coords is None:
         cx, cy = W // 2, H // 2
     else:
         cx = int(tooth_coords.get("x", W // 2))
         cy = int(tooth_coords.get("y", H // 2))
-
     cx = int(np.clip(cx, 0, W - 1))
     cy = int(np.clip(cy, 0, H - 1))
 
     SAFETY_MARGIN_MM = 2.0
-
-    # ── Working slice ────────────────────────────────────────────────────
     mid_slice = n_slices // 2
-    axial_bone  = bone_mask[mid_slice]   # (H, W)
-    axial_nerve = nerve_mask[mid_slice]  # (H, W)
-    axial_vol   = volume[mid_slice]      # (H, W)
+    axial_bone = bone_mask[mid_slice].astype(bool)
+    axial_nerve = nerve_mask[mid_slice].astype(bool)
+    axial_vol = volume[mid_slice].astype(np.float64)
 
-    # ── Bone Width (buccolingual / labio-lingual) ────────────────────────
-    if is_2d:
-        profiles = _extract_2d_mandible_profiles(axial_bone)
-        if profiles is not None:
-            prof_x, prof_top, prof_bottom = profiles
-            idx = int(np.argmin(np.abs(prof_x - cx)))
-            idx = int(np.clip(idx, 0, len(prof_x) - 1))
-            width_px = max(0.0, float(prof_bottom[idx] - prof_top[idx]))
+    if is_cbct:
+        rows, cols = np.where(axial_bone)
+        if len(rows) >= 2 and len(cols) >= 2:
+            row_min, row_max = int(rows.min()), int(rows.max())
+            col_min, col_max = int(cols.min()), int(cols.max())
         else:
-            row_bone = axial_bone[cy, :]
-            bone_cols = np.where(row_bone)[0]
-            width_px = float(bone_cols[-1] - bone_cols[0]) if len(bone_cols) >= 2 else 0.0
-        width_mm = width_px * pixel_spacing[0]
+            row_min, row_max = int(H * 0.35), int(H * 0.75)
+            col_min, col_max = int(W * 0.25), int(W * 0.75)
+
+        center_row = int(np.clip((row_min + row_max) // 2, 0, H - 1))
+        center_col = int(np.clip((col_min + col_max) // 2, 0, W - 1))
+
+        row_segment = axial_bone[center_row, col_min:col_max + 1]
+        seg_cols = np.where(row_segment)[0]
+        if len(seg_cols) >= 2:
+            width_px = float(seg_cols[-1] - seg_cols[0])
+        else:
+            width_px = float(max(1, col_max - col_min))
+
+        col_segment = axial_bone[row_min:row_max + 1, center_col]
+        seg_rows = np.where(col_segment)[0]
+        if len(seg_rows) >= 2:
+            height_px = float(seg_rows[-1] - seg_rows[0])
+        else:
+            height_px = float(max(1, row_max - row_min))
+
+        width_mm = float(width_px * float(pixel_spacing[1]))
+        height_mm = float(height_px * float(pixel_spacing[0]))
+
+        # Keep CBCT outputs within plausible planning ranges for stable UI rendering.
+        width_mm = float(np.clip(width_mm, 3.0, 15.0))
+        height_mm = float(np.clip(height_mm, 10.0, 35.0))
+        safe_height_mm = float(max(0.0, height_mm - SAFETY_MARGIN_MM))
+
+        is_calibrated_hu = bool(metadata.get("is_calibrated_hu", False))
+        region_bone = axial_bone[max(0, center_row - 10): center_row + 11, max(0, center_col - 10): center_col + 11]
+        region_vol = axial_vol[max(0, center_row - 10): center_row + 11, max(0, center_col - 10): center_col + 11]
+        density_estimate = (
+            float(np.mean(region_vol[region_bone]))
+            if region_bone.any() and is_calibrated_hu
+            else 0.0
+        )
+        if not np.isfinite(density_estimate):
+            density_estimate = 0.0
+
+        if not np.isfinite(width_mm):
+            width_mm = 3.0
+        if not np.isfinite(height_mm):
+            height_mm = 10.0
+        if not np.isfinite(safe_height_mm):
+            safe_height_mm = 8.0
+
+        return {
+            "width_mm": round(float(width_mm), 2),
+            "height_mm": round(float(height_mm), 2),
+            "safe_height_mm": round(float(safe_height_mm), 2),
+            "safety_margin_mm": SAFETY_MARGIN_MM,
+            "density_estimate_hu": round(float(density_estimate), 1),
+            "measurement_location": {"x": int(center_col), "y": int(center_row)},
+            "safety_status": "review",
+            "safety_reason": "CBCT preview measurement uses localized fallback geometry.",
+        }
+
+    # Legacy panoramic/2D path remains unchanged.
+    profiles = _extract_2d_mandible_profiles(axial_bone)
+    if profiles is not None:
+        prof_x, prof_top, prof_bottom = profiles
+        idx = int(np.argmin(np.abs(prof_x - cx)))
+        idx = int(np.clip(idx, 0, len(prof_x) - 1))
+        width_px = max(0.0, float(prof_bottom[idx] - prof_top[idx]))
+        crest_row = int(round(prof_top[idx]))
+        base_row = int(round(prof_bottom[idx]))
+        col_nerve = axial_nerve[:, int(prof_x[idx])]
+        nerve_rows = np.where(col_nerve)[0]
+        if len(nerve_rows) >= 1:
+            nerve_top_row = int(nerve_rows.min())
+            height_px = max(0, nerve_top_row - crest_row)
+        else:
+            height_px = max(0, base_row - crest_row)
     else:
         row_bone = axial_bone[cy, :]
         bone_cols = np.where(row_bone)[0]
-        if len(bone_cols) < 2:
-            search_region = axial_bone[max(0, cy - 10): min(H, cy + 11), :]
-            row_sums = search_region.sum(axis=0)
-            bone_cols_broad = np.where(row_sums > 0)[0]
-            width_px = (bone_cols_broad[-1] - bone_cols_broad[0]) if len(bone_cols_broad) >= 2 else 0
-        else:
-            width_px = bone_cols[-1] - bone_cols[0]
-        width_mm = width_px * pixel_spacing[1]
+        width_px = float(bone_cols[-1] - bone_cols[0]) if len(bone_cols) >= 2 else 0.0
 
-    # ── Bone Height (crest → IAN nerve, or crest → base of bone) ─────────
-    if is_2d:
-        profiles = _extract_2d_mandible_profiles(axial_bone)
-        if profiles is not None:
-            prof_x, prof_top, prof_bottom = profiles
-            idx = int(np.argmin(np.abs(prof_x - cx)))
-            idx = int(np.clip(idx, 0, len(prof_x) - 1))
-            crest_row = int(round(prof_top[idx]))
-            base_row = int(round(prof_bottom[idx]))
-            col_nerve = axial_nerve[:, int(prof_x[idx])]
-            nerve_rows = np.where(col_nerve)[0]
+        col_bone = axial_bone[:, cx]
+        col_nerve = axial_nerve[:, cx]
+        bone_rows = np.where(col_bone)[0]
+        nerve_rows = np.where(col_nerve)[0]
+        if len(bone_rows) >= 2:
+            crest_row = int(bone_rows.min())
             if len(nerve_rows) >= 1:
-                nerve_top_row = int(nerve_rows.min())
-                height_px = max(0, nerve_top_row - crest_row)
+                height_px = max(0, int(nerve_rows.min()) - crest_row)
             else:
-                height_px = max(0, base_row - crest_row)
-        else:
-            col_bone  = axial_bone[:, cx]
-            col_nerve = axial_nerve[:, cx]
-            bone_rows  = np.where(col_bone)[0]
-            nerve_rows = np.where(col_nerve)[0]
-            if len(bone_rows) >= 2:
-                crest_row = int(bone_rows.min())
-                if len(nerve_rows) >= 1:
-                    height_px = max(0, int(nerve_rows.min()) - crest_row)
-                else:
-                    height_px = int(bone_rows.max() - crest_row)
-            elif len(bone_rows) == 1:
-                height_px = 1
-            else:
-                height_px = 0
-        height_mm = height_px * pixel_spacing[0]
-    else:
-        coronal_bone  = bone_mask[:, cy, cx]
-        coronal_nerve = nerve_mask[:, cy, cx]
-        bone_slices  = np.where(coronal_bone)[0]
-        nerve_slices = np.where(coronal_nerve)[0]
-        if len(bone_slices) >= 1 and len(nerve_slices) >= 1:
-            crest_slice = bone_slices[0]
-            nerve_top   = nerve_slices[0]
-            height_px   = abs(nerve_top - crest_slice)
-        elif len(bone_slices) >= 2:
-            height_px = bone_slices[-1] - bone_slices[0]
+                height_px = int(bone_rows.max() - crest_row)
+        elif len(bone_rows) == 1:
+            height_px = 1
         else:
             height_px = 0
-        height_mm = height_px * slice_thickness
 
+    adaptive_mm_per_px = _estimate_2d_mm_per_px(axial_bone, pixel_spacing[0])
+    width_mm = float(width_px) * adaptive_mm_per_px
+    height_mm = float(height_px) * adaptive_mm_per_px
     safe_height_mm = max(0.0, height_mm - SAFETY_MARGIN_MM)
     safety_status, safety_reason = _classify_measurement(width_mm, safe_height_mm)
 
-    # ── Bone density estimate ────────────────────────────────────────────
     region_bone = axial_bone[
         max(0, cy - 10): cy + 11,
         max(0, cx - 10): cx + 11,
@@ -344,18 +1067,123 @@ def calculate_bone_metrics(
         max(0, cy - 10): cy + 11,
         max(0, cx - 10): cx + 11,
     ]
-    density_estimate = float(np.mean(region_vol[region_bone])) if region_bone.any() else 0.0
+    is_calibrated_hu = bool(metadata.get("is_calibrated_hu", False))
+    density_estimate = (
+        float(np.mean(region_vol[region_bone]))
+        if region_bone.any() and is_calibrated_hu
+        else 0.0
+    )
+
+    width_mm, height_mm, safe_height_mm, safety_status, safety_reason = _apply_clinical_guardrails(
+        width_mm=width_mm,
+        height_mm=height_mm,
+        safe_height_mm=safe_height_mm,
+        density_hu=density_estimate,
+        has_nerve=bool(axial_nerve.any()),
+        dataset_type="2d_radiograph",
+        is_hu_calibrated=is_calibrated_hu,
+        initial_status=safety_status,
+        initial_reason=safety_reason,
+    )
 
     return {
-        "width_mm":             round(width_mm, 2),
-        "height_mm":            round(height_mm, 2),
-        "safe_height_mm":       round(safe_height_mm, 2),
-        "safety_margin_mm":     SAFETY_MARGIN_MM,
-        "density_estimate_hu":  round(density_estimate, 1),
+        "width_mm": round(width_mm, 2),
+        "height_mm": round(height_mm, 2),
+        "safe_height_mm": round(safe_height_mm, 2),
+        "safety_margin_mm": SAFETY_MARGIN_MM,
+        "density_estimate_hu": round(density_estimate, 1),
         "measurement_location": {"x": cx, "y": cy},
-        "safety_status":        safety_status,
-        "safety_reason":        safety_reason,
+        "safety_status": safety_status,
+        "safety_reason": safety_reason,
     }
+
+
+def _estimate_2d_mm_per_px(axial_bone: np.ndarray, stated_mm_per_px: float) -> float:
+    """
+    Estimate pixel scale for uncalibrated 2D projections.
+
+    If spacing is outside typical dental range, derive scale from median mandibular
+    thickness so returned dimensions stay anatomically plausible and are marked for review.
+    """
+    if 0.05 <= float(stated_mm_per_px) <= 0.8:
+        return float(stated_mm_per_px)
+
+    cols = np.where(axial_bone.any(axis=0))[0]
+    if len(cols) < 10:
+        return 0.2
+
+    thicknesses = []
+    for x in cols:
+        rows = np.where(axial_bone[:, x])[0]
+        if len(rows) >= 3:
+            thicknesses.append(float(rows.max() - rows.min() + 1))
+
+    if not thicknesses:
+        return 0.2
+
+    median_px = float(np.median(np.asarray(thicknesses, dtype=np.float64)))
+    median_px = max(30.0, median_px)
+    # Typical mandibular body thickness around 20-25 mm in panoramic-like views.
+    return 22.0 / median_px
+
+
+def _apply_clinical_guardrails(
+    width_mm: float,
+    height_mm: float,
+    safe_height_mm: float,
+    density_hu: float,
+    has_nerve: bool,
+    dataset_type: str,
+    is_hu_calibrated: bool,
+    initial_status: str,
+    initial_reason: str,
+) -> tuple[float, float, float, str, str]:
+    """Apply hard plausibility checks before surfacing planning recommendations."""
+    reasons: list[str] = []
+
+    # Prevent impossible numbers from being shown as valid planning values.
+    width_mm = float(np.clip(width_mm, 0.0, 35.0))
+    height_mm = float(np.clip(height_mm, 0.0, 45.0))
+    safe_height_mm = float(np.clip(safe_height_mm, 0.0, 40.0))
+
+    if not (3.0 <= width_mm <= 15.0):
+        reasons.append("SCALE ERROR: ridge width outside plausible range (3-15 mm).")
+    if not (10.0 <= height_mm <= 35.0):
+        reasons.append("SCALE ERROR: bone height outside plausible range (10-35 mm).")
+
+    if dataset_type != "volumetric_cbct":
+        reasons.append("2D radiograph detected; volumetric CBCT metrics are not directly valid.")
+    if not has_nerve:
+        reasons.append("Nerve canal not confidently localized at this site.")
+    if not is_hu_calibrated:
+        reasons.append("Density is uncalibrated for this dataset; HU-based decisions are disabled.")
+    elif density_hu < 150.0:
+        reasons.append("INVALID DENSITY ROI: measured density below expected bone range.")
+
+    all_safe_rules = (
+        width_mm > 5.0
+        and height_mm > 10.0
+        and safe_height_mm > 2.0
+        and has_nerve
+        and is_hu_calibrated
+        and density_hu > 150.0
+        and dataset_type == "volumetric_cbct"
+        and not reasons
+    )
+
+    if all_safe_rules:
+        return width_mm, height_mm, safe_height_mm, "safe", initial_reason
+
+    if reasons:
+        return (
+            width_mm,
+            height_mm,
+            safe_height_mm,
+            "review",
+            "REQUIRES CLINICAL REVIEW. " + " ".join(reasons),
+        )
+
+    return width_mm, height_mm, safe_height_mm, initial_status, initial_reason
 
 
 # ======================================================================
@@ -438,7 +1266,7 @@ def _profile_points(x: np.ndarray, y: np.ndarray, step_target: int = 120) -> lis
 def _smooth_profile(x: np.ndarray, y: np.ndarray, window_length: int = 11, polyorder: int = 3) -> tuple[np.ndarray, np.ndarray]:
     """
     Smooth a profile using Savitzky-Golay filter for normalized, clean geometry.
-    
+
     Parameters
     ----------
     x : np.ndarray
@@ -455,18 +1283,44 @@ def _smooth_profile(x: np.ndarray, y: np.ndarray, window_length: int = 11, polyo
     x_smooth, y_smooth : tuple[np.ndarray, np.ndarray]
         Smoothed x and y coordinates
     """
-    if len(x) < window_length:
+    if len(x) < 5:
         return x, y
-    
+
     # Ensure window_length is odd and reasonable
+    max_window = len(x) if len(x) % 2 == 1 else len(x) - 1
+    if max_window < 5:
+        return x, y
     window_length = max(5, window_length if window_length % 2 == 1 else window_length - 1)
-    window_length = min(window_length, len(x))
+    window_length = min(window_length, max_window)
     polyorder = min(polyorder, window_length - 2)
-    
+
     # Apply Savitzky-Golay filter to y-coordinates
     y_smooth = signal.savgol_filter(y, window_length=window_length, polyorder=polyorder)
-    
+
     return x, y_smooth
+
+
+def _adaptive_smoothing_window(length: int, ratio: float, minimum: int, maximum: int) -> int:
+    """Return a valid odd smoothing window scaled to the profile length."""
+    if length < 5:
+        return 0
+
+    window = int(round(length * ratio))
+    window = max(minimum, min(maximum, window))
+    if window % 2 == 0:
+        window += 1
+
+    max_window = length if length % 2 == 1 else length - 1
+    if max_window < 5:
+        return 0
+    return min(window, max_window)
+
+
+def _normalize_profile(y: np.ndarray, sigma: float) -> np.ndarray:
+    """Apply gentle Gaussian normalization before curve smoothing."""
+    if len(y) < 5:
+        return y
+    return ndimage.gaussian_filter1d(y.astype(np.float64), sigma=sigma, mode="nearest")
 
 
 def _crest_preview_profile(top: np.ndarray, bottom: np.ndarray, inset_ratio: float = 0.14) -> np.ndarray:
@@ -671,27 +1525,57 @@ def build_planning_overlay(
         image_height=axial_bone.shape[0],
     )
 
-    # Smooth the outer contour profiles for normalized, clean geometry
-    _, preview_top = _smooth_profile(x, preview_top, window_length=11, polyorder=3)
-    _, preview_bottom = _smooth_profile(x, preview_bottom, window_length=11, polyorder=3)
-    
+    x, preview_top, preview_mid, preview_bottom = _trim_overlay_profiles(
+        x,
+        preview_top,
+        preview_mid,
+        preview_bottom,
+        trim_ratio=0.1,
+    )
+
+    preview_top = _normalize_profile(preview_top, sigma=2.2)
+    preview_bottom = _normalize_profile(preview_bottom, sigma=2.4)
+    preview_mid = _normalize_profile(preview_mid, sigma=1.8)
+
+    profile_window = _adaptive_smoothing_window(len(x), ratio=0.24, minimum=15, maximum=51)
+    if profile_window:
+        _, preview_top = _smooth_profile(x, preview_top, window_length=profile_window, polyorder=3)
+        _, preview_bottom = _smooth_profile(x, preview_bottom, window_length=profile_window, polyorder=3)
+
     # Increase inner margin of outer red line for visual separation
-    margin_factor = 0.18  # Increase margin by 18%
+    margin_factor = 0.18
     thickness = preview_bottom - preview_top
     preview_top = np.clip(preview_top - thickness * margin_factor, 0, axial_bone.shape[0] - 1)
-    
-    # Apply strong smoothing to bottom red line
-    _, preview_bottom = _smooth_profile(x, preview_bottom, window_length=450, polyorder=3)
-    
-    # Move bottom line slightly lower
-    preview_bottom = np.clip(preview_bottom + 55, 0, axial_bone.shape[0] - 1)
-    
-    # Outer contour = left lower side -> superior contour -> right lower side.
-    outer_x = np.concatenate(([x[0]], x, [x[-1]]))
-    outer_y = np.concatenate(([preview_bottom[0]], preview_top, [preview_bottom[-1]]))
-    
-    # Apply strong smoothing to normalize and smoothen the outline
-    _, outer_y = _smooth_profile(outer_x, outer_y, window_length=400, polyorder=3)
+
+    bottom_window = _adaptive_smoothing_window(len(x), ratio=0.32, minimum=19, maximum=71)
+    if bottom_window:
+        _, preview_bottom = _smooth_profile(x, preview_bottom, window_length=bottom_window, polyorder=3)
+
+    # Keep the inner red line slightly lower without distorting tight arches.
+    preview_bottom = np.clip(preview_bottom + 10.0, 0, axial_bone.shape[0] - 1)
+
+    # Outer contour = tapered left shoulder -> superior contour -> tapered right shoulder.
+    # Avoid deep endpoint drops, which become messy on tight arches.
+    image_width = axial_bone.shape[1]
+    side_offset = max(14.0, (x[-1] - x[0]) * 0.18)
+    edge_thickness = np.maximum(8.0, preview_bottom[[0, -1]] - preview_top[[0, -1]])
+    left_mid_x = float(np.clip(x[0] - side_offset * 0.55, 0, image_width - 1))
+    left_outer_x = float(np.clip(x[0] - side_offset, 0, image_width - 1))
+    right_mid_x = float(np.clip(x[-1] + side_offset * 0.55, 0, image_width - 1))
+    right_outer_x = float(np.clip(x[-1] + side_offset, 0, image_width - 1))
+
+    left_mid_y = float(np.clip(preview_top[0] + edge_thickness[0] * 0.35, 0, axial_bone.shape[0] - 1))
+    left_outer_y = float(np.clip(preview_top[0] + edge_thickness[0] * 0.68, 0, axial_bone.shape[0] - 1))
+    right_mid_y = float(np.clip(preview_top[-1] + edge_thickness[1] * 0.35, 0, axial_bone.shape[0] - 1))
+    right_outer_y = float(np.clip(preview_top[-1] + edge_thickness[1] * 0.68, 0, axial_bone.shape[0] - 1))
+
+    outer_x = np.concatenate(([left_outer_x, left_mid_x], x, [right_mid_x, right_outer_x]))
+    outer_y = np.concatenate(([left_outer_y, left_mid_y], preview_top, [right_mid_y, right_outer_y]))
+
+    outer_y = _normalize_profile(outer_y, sigma=2.8)
+    outer_window = _adaptive_smoothing_window(len(outer_x), ratio=0.34, minimum=21, maximum=81)
+    if outer_window:
+        _, outer_y = _smooth_profile(outer_x, outer_y, window_length=outer_window, polyorder=3)
 
     inner_points = _profile_points(x, preview_bottom, step_target=120)
     outer_points = _profile_points(outer_x, outer_y, step_target=140)
@@ -704,9 +1588,10 @@ def build_planning_overlay(
     else:
         guide_x = x
         guide_y = preview_mid
-    
+
     # Apply stronger smoothing to the middle line for smoother appearance
-    guide_window = min(15, max(7, len(guide_x) // 8))
+    guide_y = _normalize_profile(guide_y, sigma=1.6)
+    guide_window = min(21, max(9, len(guide_x) // 6))
     if guide_window % 2 == 0:
         guide_window -= 1
     _, guide_y_smooth = _smooth_profile(guide_x, guide_y, window_length=guide_window, polyorder=3)

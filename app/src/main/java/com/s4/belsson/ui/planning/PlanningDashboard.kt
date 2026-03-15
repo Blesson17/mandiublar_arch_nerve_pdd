@@ -1,7 +1,13 @@
 package com.s4.belsson.ui.planning
 
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -16,31 +22,74 @@ fun PlanningDashboard(
     viewModel: PlanningViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val authState by viewModel.authState.collectAsStateWithLifecycle()
     val tapMetrics by viewModel.tapMetrics.collectAsStateWithLifecycle()
     val tapOverlay by viewModel.tapOverlay.collectAsStateWithLifecycle()
 
-    when (val state = uiState) {
-        is PlanningUiState.Idle,
-        is PlanningUiState.Loading,
-        is PlanningUiState.Error -> {
-            UploadScreen(
-                uiState = state,
-                onFileSelected = { uri -> viewModel.uploadDicom(uri) },
-                modifier = modifier
-            )
-        }
+    if (authState !is AuthUiState.Authenticated) {
+        AuthScreen(
+            authState = authState,
+            onLogin = { email, password -> viewModel.login(email, password) },
+            onSignup = { email, password -> viewModel.signup(email, password) },
+            onDismissError = { viewModel.clearAuthError() },
+            modifier = modifier,
+        )
+        return
+    }
 
-        is PlanningUiState.Success -> {
+    val state = uiState
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        UploadScreen(
+            uiState = state,
+            onProcessRequested = { cbctUri, panoramicUri ->
+                viewModel.uploadBoth(cbctUri, panoramicUri)
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (state is PlanningUiState.Success) {
+            Text(
+                text = "CBCT Output",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
             ResultsScreen(
-                analysis = state.analysis,
-                opgBitmap = state.opgBitmap,
-                measurementManager = state.measurementManager,
+                analysis = state.cbctAnalysis,
+                opgBitmap = state.cbctBitmap,
+                measurementManager = state.cbctMeasurementManager,
+                tapMetrics = null,
+                tapOverlay = null,
+                onTapCoordinate = { _, _ -> },
+                onGenerateReport = { viewModel.generateReport() },
+                onReset = { viewModel.reset() },
+                onLogout = { viewModel.logout() },
+                modifier = Modifier.fillMaxWidth(),
+                embedded = true,
+                showActions = false,
+            )
+
+            Text(
+                text = "Panoramic Output",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            ResultsScreen(
+                analysis = state.panoramicAnalysis,
+                opgBitmap = state.panoramicBitmap,
+                measurementManager = state.panoramicMeasurementManager,
                 tapMetrics = tapMetrics,
                 tapOverlay = tapOverlay,
                 onTapCoordinate = { x, y -> viewModel.measureAtCoordinate(x, y) },
                 onGenerateReport = { viewModel.generateReport() },
                 onReset = { viewModel.reset() },
-                modifier = modifier
+                onLogout = { viewModel.logout() },
+                modifier = Modifier.fillMaxWidth(),
+                embedded = true,
+                showActions = true,
             )
         }
     }

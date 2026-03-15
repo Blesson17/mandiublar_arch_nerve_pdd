@@ -11,13 +11,17 @@ import com.s4.belsson.data.model.AnalysisResponse
 import com.s4.belsson.data.model.BoneMetrics
 import com.s4.belsson.data.model.PlanningOverlay
 import com.s4.belsson.data.repository.ImplantRepository
+import com.s4.belsson.data.repository.ImplantRepository.UploadWorkflow
 import com.s4.belsson.util.MeasurementManager
 import com.s4.belsson.util.ReportGenerator
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.abs
 
 /**
  * UI state for the planning dashboard.
@@ -26,11 +30,21 @@ sealed class PlanningUiState {
     data object Idle : PlanningUiState()
     data object Loading : PlanningUiState()
     data class Success(
-        val analysis: AnalysisResponse,
-        val opgBitmap: Bitmap?,
-        val measurementManager: MeasurementManager
+        val cbctAnalysis: AnalysisResponse,
+        val cbctBitmap: Bitmap?,
+        val cbctMeasurementManager: MeasurementManager,
+        val panoramicAnalysis: AnalysisResponse,
+        val panoramicBitmap: Bitmap?,
+        val panoramicMeasurementManager: MeasurementManager,
     ) : PlanningUiState()
     data class Error(val message: String) : PlanningUiState()
+}
+
+sealed class AuthUiState {
+    data object Loading : AuthUiState()
+    data object Unauthenticated : AuthUiState()
+    data class Authenticated(val email: String) : AuthUiState()
+    data class Error(val message: String) : AuthUiState()
 }
 
 /**
@@ -45,6 +59,9 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
     private val _uiState = MutableStateFlow<PlanningUiState>(PlanningUiState.Idle)
     val uiState: StateFlow<PlanningUiState> = _uiState.asStateFlow()
 
+    private val _authState = MutableStateFlow<AuthUiState>(AuthUiState.Loading)
+    val authState: StateFlow<AuthUiState> = _authState.asStateFlow()
+
     /** Updated when user taps a specific tooth region */
     private val _tapMetrics = MutableStateFlow<BoneMetrics?>(null)
     val tapMetrics: StateFlow<BoneMetrics?> = _tapMetrics.asStateFlow()
@@ -55,43 +72,144 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
     /** Session ID from the last successful analysis */
     private var currentSessionId: String? = null
 
+    init {
+        val hasSession = repository.hasActiveSession()
+        val email = repository.getSavedEmail().orEmpty()
+        _authState.value = if (hasSession) {
+            AuthUiState.Authenticated(email = email)
+        } else {
+            AuthUiState.Unauthenticated
+        }
+    }
+
+    fun login(email: String, password: String) {
+        _authState.value = AuthUiState.Loading
+        viewModelScope.launch {
+            repository.login(email, password).collect { result ->
+                result.fold(
+                    onSuccess = { auth ->
+                        _authState.value = AuthUiState.Authenticated(auth.user.email)
+                    },
+                    onFailure = { err ->
+                        _authState.value = AuthUiState.Error(err.message ?: "Login failed")
+                    }
+                )
+            }
+        }
+    }
+
+    fun signup(email: String, password: String) {
+        _authState.value = AuthUiState.Loading
+        viewModelScope.launch {
+            repository.signup(email, password).collect { result ->
+                result.fold(
+                    onSuccess = { auth ->
+                        _authState.value = AuthUiState.Authenticated(auth.user.email)
+                    },
+                    onFailure = { err ->
+                        _authState.value = AuthUiState.Error(err.message ?: "Signup failed")
+                    }
+                )
+            }
+        }
+    }
+
+    fun clearAuthError() {
+        if (_authState.value is AuthUiState.Error) {
+            _authState.value = AuthUiState.Unauthenticated
+        }
+    }
+
+    fun logout() {
+        repository.logout()
+        reset()
+        _authState.value = AuthUiState.Unauthenticated
+    }
+
     // ─────────────────────────────────────────────
     // Upload & Analyze
     // ─────────────────────────────────────────────
 
     /**
-     * Upload a DICOM file for analysis.
+     * Process both CBCT and panoramic uploads in parallel.
      */
-    fun uploadDicom(uri: Uri) {
+    fun uploadBoth(cbctUri: Uri, panoramicUri: Uri) {
         _uiState.value = PlanningUiState.Loading
         _tapMetrics.value = null
         _tapOverlay.value = null
 
         viewModelScope.launch {
-            repository.analyzeJaw(uri).collect { result ->
-                result.fold(
-                    onSuccess = { response ->
-                        currentSessionId = response.sessionId
+            try {
+                val cbctDeferred = async {
+                    repository.analyzeJaw(cbctUri, UploadWorkflow.CBCT_IMPLANT).first()
+                }
+                val panoramicDeferred = async {
+                    repository.analyzeJaw(
+                        panoramicUri,
+                        UploadWorkflow.PANORAMIC_MANDIBULAR_CANAL,
+                    ).first()
+                }
 
-                        val opgBitmap = decodeBase64ToBitmap(response.opgImageBase64)
+                val cbctResult = cbctDeferred.await()
+                val panoramicResult = panoramicDeferred.await()
 
-                        val mm = MeasurementManager(
-                            pixelSpacingRow = response.metadata.pixelSpacing.getOrElse(0) { 1.0 },
-                            pixelSpacingCol = response.metadata.pixelSpacing.getOrElse(1) { 1.0 },
-                            sliceThickness = response.metadata.sliceThickness
-                        )
+                val failure =
+                    cbctResult.exceptionOrNull() ?: panoramicResult.exceptionOrNull()
+                if (failure != null) {
+                    _uiState.value =
+                        PlanningUiState.Error(failure.message ?: "Unknown error")
+                    return@launch
+                }
 
-                        _uiState.value = PlanningUiState.Success(
-                            analysis = response,
-                            opgBitmap = opgBitmap,
-                            measurementManager = mm
-                        )
-                    },
-                    onFailure = { error ->
-                        _uiState.value = PlanningUiState.Error(
-                            error.message ?: "Unknown error"
-                        )
-                    }
+                val cbctResponse = cbctResult.getOrNull() ?: run {
+                    _uiState.value =
+                        PlanningUiState.Error("CBCT analysis returned no data")
+                    return@launch
+                }
+                val panoramicResponse = panoramicResult.getOrNull() ?: run {
+                    _uiState.value =
+                        PlanningUiState.Error("Panoramic analysis returned no data")
+                    return@launch
+                }
+
+                currentSessionId = panoramicResponse.sessionId
+
+                // CBCT OPG for 3D volumes may produce very small or empty images —
+                // decodeBase64ToBitmap already returns null safely.
+                val cbctBitmap = decodeBase64ToBitmap(cbctResponse.opgImageBase64)
+                val panoramicBitmap =
+                    decodeBase64ToBitmap(panoramicResponse.opgImageBase64)
+
+                val cbctMm = MeasurementManager(
+                    pixelSpacingRow = sanitizeSpacing(
+                        cbctResponse.metadata.pixelSpacing.getOrElse(0) { 1.0 }),
+                    pixelSpacingCol = sanitizeSpacing(
+                        cbctResponse.metadata.pixelSpacing.getOrElse(1) { 1.0 }),
+                    sliceThickness = sanitizeSpacing(cbctResponse.metadata.sliceThickness)
+                )
+                val panoramicMm = MeasurementManager(
+                    pixelSpacingRow = sanitizeSpacing(
+                        panoramicResponse.metadata.pixelSpacing.getOrElse(0) { 1.0 }),
+                    pixelSpacingCol = sanitizeSpacing(
+                        panoramicResponse.metadata.pixelSpacing.getOrElse(1) { 1.0 }),
+                    sliceThickness = sanitizeSpacing(panoramicResponse.metadata.sliceThickness)
+                )
+
+                _uiState.value = PlanningUiState.Success(
+                    cbctAnalysis = cbctResponse,
+                    cbctBitmap = cbctBitmap,
+                    cbctMeasurementManager = cbctMm,
+                    panoramicAnalysis = panoramicResponse,
+                    panoramicBitmap = panoramicBitmap,
+                    panoramicMeasurementManager = panoramicMm,
+                )
+            } catch (oom: OutOfMemoryError) {
+                _uiState.value = PlanningUiState.Error(
+                    "Out of memory — the CBCT dataset is too large for this device."
+                )
+            } catch (e: Exception) {
+                _uiState.value = PlanningUiState.Error(
+                    e.message ?: "Unexpected error during analysis"
                 )
             }
         }
@@ -131,9 +249,12 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
         val state = _uiState.value
         if (state !is PlanningUiState.Success) return null
 
+        val preferred = state.panoramicAnalysis
+        val preferredBitmap = state.panoramicBitmap
+
         return reportGenerator.generateReport(
-            analysis = state.analysis,
-            opgBitmap = state.opgBitmap,
+            analysis = preferred,
+            opgBitmap = preferredBitmap,
             toothLabel = toothLabel
         )
     }
@@ -161,5 +282,10 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun sanitizeSpacing(value: Double): Double {
+        if (!value.isFinite()) return 1.0
+        return abs(value).coerceAtLeast(0.01)
     }
 }

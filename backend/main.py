@@ -9,17 +9,27 @@ Endpoints:
 
 from __future__ import annotations
 
+import io
 import uuid
 import logging
+import traceback
 from typing import Optional
+import numpy as np
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from PIL import Image
+import pydicom
 from pydantic import BaseModel
 
+from auth_db import AuthDatabase
 from dicom_processor import (
     load_dicom_volume,
+    load_cbct_zip,
+    load_image_projection,
     generate_opg,
+    detect_mandibular_canal_path_2d,
     calculate_bone_metrics,
     build_planning_overlay,
     select_default_measurement_site,
@@ -51,6 +61,8 @@ _volume_cache: dict[str, dict] = {}
 
 # ---------- Model ----------
 segmentor = UNetSegmentor()
+auth_db = AuthDatabase()
+auth_scheme = HTTPBearer(auto_error=False)
 
 
 # ---------- Response schemas ----------
@@ -85,6 +97,7 @@ class BoneMetrics(BaseModel):
 
 class AnalysisResponse(BaseModel):
     session_id: str
+    workflow: str = "cbct_implant"
     patient_name: str
     opg_image_base64: str
     nerve_path: list[NervePoint]
@@ -105,63 +118,235 @@ class MeasureResponse(BaseModel):
     planning_overlay: PlanningOverlay
 
 
+class AuthRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthUser(BaseModel):
+    id: int
+    email: str
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user: AuthUser
+
+
 # ---------- Endpoints ----------
 
-def _is_dicom(data: bytes) -> bool:
-    """
-    Check if raw bytes are a DICOM file.
+def create_default_masks(volume):
+    n_slices, height, width = volume.shape
+    _ = (n_slices, height, width)
 
-    Standard DICOM Part 10:  bytes 128-131 == b'DICM'
-    Legacy ACR-NEMA (no preamble): first two bytes are a low group tag (0x0000–0x0009)
-    """
-    if len(data) < 132:
-        # Too short for a standard preamble; try ACR-NEMA heuristic
-        return len(data) > 4 and data[1] == 0x00 and data[0] in range(0x00, 0x10)
-    # Standard DICOM preamble check
-    if data[128:132] == b"DICM":
-        return True
-    # ACR-NEMA fallback: group tag in first two bytes is very small
-    group = int.from_bytes(data[0:2], byteorder="little")
-    return group < 0x0010
+    threshold = np.percentile(volume, 70)
+    bone_mask = volume > threshold
+    nerve_mask = np.zeros_like(volume, dtype=bool)
+    return bone_mask.astype(bool), nerve_mask.astype(bool)
+
+
+def _masks_match_volume(volume, bone_mask, nerve_mask) -> bool:
+    return (
+        bone_mask is not None
+        and nerve_mask is not None
+        and bone_mask.shape == volume.shape
+        and nerve_mask.shape == volume.shape
+    )
+
+def detect_input_type(upload_bytes: bytes, filename: Optional[str]) -> Optional[str]:
+    if filename and filename.lower().endswith(".zip"):
+        return "zip_cbct"
+    if len(upload_bytes) >= 2 and upload_bytes[:2] == b"PK":
+        return "zip_cbct"
+
+    try:
+        pydicom.dcmread(io.BytesIO(upload_bytes), stop_before_pixels=True)
+        return "dicom_single"
+    except Exception:
+        pass
+
+    try:
+        with Image.open(io.BytesIO(upload_bytes)) as img:
+            img.verify()
+        return "image_projection"
+    except Exception:
+        return None
+
+
+def _peek_upload_header(upload_file: UploadFile, max_bytes: int = 4096) -> bytes:
+    upload_file.file.seek(0)
+    header = upload_file.file.read(max_bytes)
+    upload_file.file.seek(0)
+    return header
+
+
+def detect_upload_type(upload_file: UploadFile) -> Optional[str]:
+    header = _peek_upload_header(upload_file)
+    if upload_file.filename and upload_file.filename.lower().endswith(".zip"):
+        return "zip_cbct"
+    if len(header) >= 2 and header[:2] == b"PK":
+        return "zip_cbct"
+
+    try:
+        upload_file.file.seek(0)
+        pydicom.dcmread(upload_file.file, stop_before_pixels=True)
+        return "dicom_single"
+    except Exception:
+        pass
+    finally:
+        upload_file.file.seek(0)
+
+    try:
+        with Image.open(upload_file.file) as img:
+            img.verify()
+        return "image_projection"
+    except Exception:
+        return None
+    finally:
+        upload_file.file.seek(0)
+
+
+def _load_volume_for_workflow(dicom_bytes: bytes, workflow: str, file_name: Optional[str]) -> tuple:
+    input_type = detect_input_type(dicom_bytes, file_name)
+
+    if workflow == "cbct_implant":
+        if input_type == "zip_cbct":
+            return load_cbct_zip(dicom_bytes)
+        if input_type == "dicom_single":
+            return load_dicom_volume(dicom_bytes)
+        raise HTTPException(
+            status_code=400,
+            detail="CBCT input must be a DICOM (.dcm) file or a ZIP archive of DICOM slices.",
+        )
+
+    if workflow == "panoramic_mandibular_canal":
+        if input_type == "dicom_single":
+            return load_dicom_volume(dicom_bytes)
+        if input_type == "image_projection":
+            return load_image_projection(dicom_bytes)
+        raise HTTPException(
+            status_code=400,
+            detail="Panoramic input must be a DICOM (.dcm), JPEG, or PNG file.",
+        )
+
+    raise HTTPException(status_code=400, detail=f"Unsupported workflow: {workflow}")
+
+
+def _load_volume_for_upload(upload_file: UploadFile, workflow: str) -> tuple:
+    input_type = detect_upload_type(upload_file)
+
+    if workflow == "cbct_implant":
+        if input_type == "zip_cbct":
+            try:
+                logger.info("Detected ZIP CBCT upload")
+                return load_cbct_zip(upload_file.file)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid CBCT dataset: {exc}") from exc
+        if input_type == "dicom_single":
+            dicom_bytes = upload_file.file.read()
+            upload_file.file.seek(0)
+            return load_dicom_volume(dicom_bytes)
+        raise HTTPException(
+            status_code=400,
+            detail="CBCT input must be a DICOM (.dcm) file or a ZIP archive of DICOM slices.",
+        )
+
+    if workflow == "panoramic_mandibular_canal":
+        if input_type == "dicom_single":
+            dicom_bytes = upload_file.file.read()
+            upload_file.file.seek(0)
+            return load_dicom_volume(dicom_bytes)
+        if input_type == "image_projection":
+            image_bytes = upload_file.file.read()
+            upload_file.file.seek(0)
+            return load_image_projection(image_bytes)
+        raise HTTPException(
+            status_code=400,
+            detail="Panoramic input must be a DICOM (.dcm), JPEG, or PNG file.",
+        )
+
+    raise HTTPException(status_code=400, detail=f"Unsupported workflow: {workflow}")
+
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
 
-@app.post("/analyze-jaw", response_model=AnalysisResponse)
-async def analyze_jaw(
-    file: UploadFile = File(...),
-    tooth_x: Optional[int] = Query(None, description="Tooth region X coordinate"),
-    tooth_y: Optional[int] = Query(None, description="Tooth region Y coordinate"),
-):
-    """
-    Upload a DICOM (.dcm) CBCT file for full analysis.
+def require_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(auth_scheme),
+) -> dict:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization token.",
+        )
 
-    Returns OPG projection, nerve path, bone measurements, and metadata.
-    """
-    logger.info("Received file: %s (%s)", file.filename, file.content_type)
+    user = auth_db.get_user_by_token(credentials.credentials)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired authorization token.",
+        )
+    return user
 
-    dicom_bytes = await file.read()
+
+@app.post("/auth/signup", response_model=AuthResponse)
+async def signup(req: AuthRequest):
+    try:
+        user = auth_db.create_user(req.email, req.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    token = auth_db.create_session(user_id=user["id"])
+    return AuthResponse(token=token, user=AuthUser(**user))
+
+
+@app.post("/auth/login", response_model=AuthResponse)
+async def login(req: AuthRequest):
+    user = auth_db.authenticate(req.email, req.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    token = auth_db.create_session(user_id=user["id"])
+    return AuthResponse(token=token, user=AuthUser(**user))
+
+
+def _analyze_dicom_bytes(
+    dicom_bytes: bytes,
+    tooth_x: Optional[int],
+    tooth_y: Optional[int],
+    workflow: str,
+    file_name: Optional[str] = None,
+) -> AnalysisResponse:
     if len(dicom_bytes) == 0:
         raise HTTPException(status_code=400, detail="Empty file.")
 
-    # Validate by DICOM magic bytes rather than filename extension.
-    # Standard DICOM files have "DICM" at byte offset 128.
-    # Older ACR-NEMA files have no preamble but start with a valid tag (00 00 / 08 00).
-    if not _is_dicom(dicom_bytes):
-        raise HTTPException(
-            status_code=400,
-            detail="File does not appear to be a valid DICOM file. "
-                   "Expected 'DICM' preamble at offset 128 or a valid ACR-NEMA header."
-        )
-
-    # 1. Load DICOM volume
     try:
-        volume, metadata = load_dicom_volume(dicom_bytes)
+        volume, metadata = _load_volume_for_workflow(dicom_bytes, workflow, file_name)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("Failed to load DICOM")
-        raise HTTPException(status_code=422, detail=f"DICOM load error: {e}")
+        logger.exception("Failed to decode input")
+        raise HTTPException(status_code=422, detail=f"Input decode error: {e}")
+
+    return _analyze_loaded_volume(
+        volume=volume,
+        metadata=metadata,
+        tooth_x=tooth_x,
+        tooth_y=tooth_y,
+        workflow=workflow,
+    )
+
+
+def _analyze_loaded_volume(
+    volume,
+    metadata,
+    tooth_x: Optional[int],
+    tooth_y: Optional[int],
+    workflow: str,
+) -> AnalysisResponse:
 
     logger.info(
         "Volume loaded: shape=%s, spacing=%s, patient=%s",
@@ -170,18 +355,46 @@ async def analyze_jaw(
         metadata["patient_name"],
     )
 
-    # 2. Generate OPG
     try:
         opg_b64 = generate_opg(volume, metadata)
-    except Exception as e:
+    except Exception:
         logger.exception("OPG generation failed")
         opg_b64 = ""
 
-    # 3. Segmentation (bone + nerve)
-    seg_result = segmentor.predict(volume)
-    bone_mask = seg_result["bone_mask"]
-    nerve_mask = seg_result["nerve_mask"]
-    mandible_center = seg_result.get("mandible_center", None)
+    if workflow == "cbct_implant":
+        try:
+            seg_result = segmentor.predict(volume)
+            bone_mask = seg_result.get("bone_mask")
+            nerve_mask = seg_result.get("nerve_mask")
+            mandible_center = seg_result.get("mandible_center", None)
+        except Exception:
+            bone_mask = None
+            nerve_mask = None
+            mandible_center = None
+    else:
+        seg_result = segmentor.predict(volume)
+        bone_mask = seg_result["bone_mask"]
+        nerve_mask = seg_result["nerve_mask"]
+        mandible_center = seg_result.get("mandible_center", None)
+
+    if workflow == "cbct_implant":
+        bone_mask = np.asarray(bone_mask, dtype=bool) if bone_mask is not None else None
+        nerve_mask = np.asarray(nerve_mask, dtype=bool) if nerve_mask is not None else None
+
+        if not _masks_match_volume(volume, bone_mask, nerve_mask):
+            bone_mask, nerve_mask = create_default_masks(volume)
+
+        print("CBCT volume shape:", volume.shape)
+        print("Pixel spacing:", metadata.get("pixel_spacing"))
+        print("Bone mask shape:", bone_mask.shape)
+        print("Nerve mask shape:", nerve_mask.shape)
+
+        if bone_mask.shape != volume.shape or nerve_mask.shape != volume.shape:
+            raise ValueError("Mask shape mismatch")
+
+        print("Bone mask voxels:", int(bone_mask.sum()))
+        if int(bone_mask.sum()) < 1000:
+            raise ValueError("Bone mask detection failed")
 
     tooth_coords = None
     if tooth_x is not None and tooth_y is not None:
@@ -193,14 +406,25 @@ async def analyze_jaw(
         elif mandible_center is not None:
             tooth_coords = {"x": mandible_center[1], "y": mandible_center[0]}
 
-    bone_metrics = calculate_bone_metrics(
-        volume, bone_mask, nerve_mask, metadata, tooth_coords
-    )
-    nerve_path = extract_nerve_path_2d(
-        nerve_mask,
-        bone_mask=bone_mask,
-        preferred_x=bone_metrics["measurement_location"]["x"],
-    )
+    if workflow == "cbct_implant":
+        bone_metrics = calculate_bone_metrics(
+            volume, bone_mask, nerve_mask, metadata, tooth_coords
+        )
+        print("Analysis complete")
+        print("Bone width:", bone_metrics.get("width_mm"))
+        print("Bone height:", bone_metrics.get("height_mm"))
+    else:
+        bone_metrics = calculate_bone_metrics(
+            volume, bone_mask, nerve_mask, metadata, tooth_coords
+        )
+    if workflow == "panoramic_mandibular_canal":
+        nerve_path = detect_mandibular_canal_path_2d(volume, metadata)
+    else:
+        nerve_path = extract_nerve_path_2d(
+            nerve_mask,
+            bone_mask=bone_mask,
+            preferred_x=bone_metrics["measurement_location"]["x"],
+        )
     planning_overlay = build_planning_overlay(volume, bone_mask, bone_metrics)
     arch_pts = planning_overlay["outer_contour"]
 
@@ -210,13 +434,17 @@ async def analyze_jaw(
         "bone_mask": bone_mask,
         "nerve_mask": nerve_mask,
         "metadata": metadata,
+        "workflow": workflow,
     }
     if len(_volume_cache) > 5:
         oldest = next(iter(_volume_cache))
         del _volume_cache[oldest]
 
+    dataset_type = "volumetric_cbct" if int(metadata.get("num_slices", 1)) >= 20 else "2d_radiograph"
+
     return AnalysisResponse(
         session_id=session_id,
+        workflow=workflow,
         patient_name=metadata["patient_name"],
         opg_image_base64=opg_b64,
         nerve_path=[NervePoint(**p) for p in nerve_path],
@@ -246,12 +474,75 @@ async def analyze_jaw(
             "rows": metadata["rows"],
             "columns": metadata["columns"],
             "num_slices": metadata["num_slices"],
+            "patient_name": metadata.get("patient_name", "Unknown"),
+            "dataset_type": dataset_type,
+            "modality": metadata.get("modality", "UNKNOWN"),
+            "is_calibrated_hu": bool(metadata.get("is_calibrated_hu", False)),
         },
     )
 
 
+@app.post("/analyze-jaw", response_model=AnalysisResponse)
+async def analyze_jaw(
+    file: UploadFile = File(...),
+    tooth_x: Optional[int] = Query(None, description="Tooth region X coordinate"),
+    tooth_y: Optional[int] = Query(None, description="Tooth region Y coordinate"),
+    _user: dict = Depends(require_user),
+):
+    """
+    Upload a DICOM (.dcm) CBCT file for full analysis.
+
+    Returns OPG projection, nerve path, bone measurements, and metadata.
+    """
+    logger.info("Received file: %s (%s)", file.filename, file.content_type)
+    try:
+        volume, metadata = _load_volume_for_upload(file, workflow="cbct_implant")
+        return _analyze_loaded_volume(
+            volume=volume,
+            metadata=metadata,
+            tooth_x=tooth_x,
+            tooth_y=tooth_y,
+            workflow="cbct_implant",
+        )
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/analyze-panoramic", response_model=AnalysisResponse)
+async def analyze_panoramic(
+    file: UploadFile = File(...),
+    tooth_x: Optional[int] = Query(None, description="Optional X for canal region"),
+    tooth_y: Optional[int] = Query(None, description="Optional Y for canal region"),
+    _user: dict = Depends(require_user),
+):
+    """
+    Upload a panoramic / OPG DICOM focused on mandibular canal tracing and
+    inferior border visualization.
+    """
+    logger.info("Received panoramic file: %s (%s)", file.filename, file.content_type)
+    try:
+        volume, metadata = _load_volume_for_upload(file, workflow="panoramic_mandibular_canal")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to decode input")
+        raise HTTPException(status_code=422, detail=f"Input decode error: {exc}") from exc
+
+    return _analyze_loaded_volume(
+        volume=volume,
+        metadata=metadata,
+        tooth_x=tooth_x,
+        tooth_y=tooth_y,
+        workflow="panoramic_mandibular_canal",
+    )
+
+
 @app.post("/measure", response_model=MeasureResponse)
-async def measure(req: MeasureRequest):
+async def measure(
+    req: MeasureRequest,
+    _user: dict = Depends(require_user),
+):
     """
     Compute bone metrics at a specific (x, y) coordinate
     for a previously uploaded volume.

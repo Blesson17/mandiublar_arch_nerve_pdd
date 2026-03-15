@@ -457,16 +457,194 @@ def detect_dental_arch(volume: np.ndarray, metadata: dict) -> np.ndarray:
     return coords[::step]
 
 
+def generate_cbct_cpr(
+    volume: np.ndarray, metadata: dict
+) -> tuple[str, list[dict]]:
+    """
+    Curved Planar Reconstruction (CPR) for CBCT implant planning.
+
+    Pipeline:
+      1) Select mid-axial slice
+      2) Segment mandible
+      3) Extract dental arch (alveolar ridge) upper boundary
+      4) Fit smooth spline through arch points
+      5) Generate perpendicular cross-sections via map_coordinates
+      6) Stack into panoramic reconstruction image
+      7) Return arch overlay points for the frontend
+
+    Returns:
+        (cpr_base64, arch_points)
+        cpr_base64 : base64-encoded PNG of the panoramic CPR view
+        arch_points: list of {"x": int, "y": int} for frontend overlay
+    """
+    n_slices, H, W = volume.shape
+
+    # ── Step 1: Mid-axial slice ──────────────────────────────────────────
+    mid_idx = n_slices // 2
+    axial = volume[mid_idx].astype(np.float64)
+
+    # ── Step 2: Segment mandible ─────────────────────────────────────────
+    mandible_mask = _segment_mandible_2d(axial)
+    if not mandible_mask.any():
+        # Fallback: use intensity threshold directly
+        threshold = np.percentile(axial, 75)
+        mandible_mask = axial > threshold
+        mandible_mask = ndimage.binary_closing(mandible_mask, iterations=3)
+        mandible_mask = ndimage.binary_fill_holes(mandible_mask)
+
+    # ── Step 3: Extract dental arch (alveolar ridge) ─────────────────────
+    # For each column, find the topmost bone pixel → upper ridge boundary
+    arch_y_raw = {}
+    cols_with_bone = np.where(mandible_mask.any(axis=0))[0]
+
+    for x in cols_with_bone:
+        rows = np.where(mandible_mask[:, x])[0]
+        if len(rows) > 0:
+            arch_y_raw[int(x)] = int(rows.min())
+
+    if len(arch_y_raw) < 20:
+        # Not enough arch points: return a coronal MIP fallback
+        return _coronal_mip_fallback(volume, H, W), []
+
+    x_coords = np.array(sorted(arch_y_raw.keys()), dtype=np.float64)
+    y_coords = np.array([arch_y_raw[int(x)] for x in x_coords], dtype=np.float64)
+
+    # ── Step 4: Fit smooth spline ────────────────────────────────────────
+    try:
+        # s controls smoothness; larger = smoother
+        spline = UnivariateSpline(x_coords, y_coords, s=len(x_coords) * 2, k=3)
+    except Exception:
+        # Fallback to linear interpolation if spline fails
+        return _coronal_mip_fallback(volume, H, W), []
+
+    # Sample evenly-spaced points along the arch spline
+    num_arch_points = 200
+    x_min, x_max = float(x_coords.min()), float(x_coords.max())
+    x_sampled = np.linspace(x_min, x_max, num_arch_points)
+    y_sampled = spline(x_sampled)
+    y_sampled = np.clip(y_sampled, 0, H - 1)
+
+    # Build arch overlay points for frontend
+    arch_points = [
+        {"x": int(round(x)), "y": int(round(y))}
+        for x, y in zip(x_sampled, y_sampled)
+    ]
+
+    # ── Step 5: Generate perpendicular cross-sections ────────────────────
+    # Volume axes: volume[z, y, x]
+    #
+    # For each arch point (px, py), compute initial direction and sample
+    # a perpendicular line through the volume using 3D map_coordinates.
+    #
+    # Coordinate grids are built as 2D arrays of shape (Z, width) so that
+    # map_coordinates returns a (Z, width) cross-section directly.
+    cross_section_width = 200
+    t = np.linspace(-cross_section_width / 2, cross_section_width / 2,
+                     cross_section_width)
+
+    # Tangent vectors via finite differences
+    dx = np.gradient(x_sampled)
+    dy = np.gradient(y_sampled)
+
+    # Normalize tangent
+    tlen = np.sqrt(dx ** 2 + dy ** 2) + 1e-8
+    tx = dx / tlen
+    ty = dy / tlen
+
+    # Perpendicular normal: rotate tangent 90°
+    norm_x = -ty
+    norm_y = tx
+
+    # Z indices (shared across all arch points)
+    z = np.arange(n_slices, dtype=np.float64)
+
+    # Convert volume to float once
+    vol_f = volume.astype(np.float64)
+
+    columns = []
+    for i in range(num_arch_points):
+        px, py = x_sampled[i], y_sampled[i]
+
+        # Sampling line along the normal in the XY plane
+        xs = np.clip(px + norm_x[i] * t, 0, W - 1)   # (width,)
+        ys = np.clip(py + norm_y[i] * t, 0, H - 1)   # (width,)
+
+        # Build 2D coordinate grids of shape (Z, width)
+        z_grid = np.repeat(z[:, None], cross_section_width, axis=1)
+        y_grid = np.repeat(ys[None, :], n_slices, axis=0)
+        x_grid = np.repeat(xs[None, :], n_slices, axis=0)
+
+        # Sample the volume: coords=[z, y, x], result shape = (Z, width)
+        section = ndimage.map_coordinates(
+            vol_f, [z_grid, y_grid, x_grid], order=1, mode="nearest"
+        )
+
+        # Collapse slices (Z axis) using maximum intensity projection
+        # Result: (width,) — one panoramic column for this arch position
+        column = np.max(section, axis=0)
+        columns.append(column)
+
+    # ── Step 6: Build final CPR image ────────────────────────────────────
+    # Stack columns: (num_arch_points, width) e.g. (200, 200)
+    cpr_image = np.stack(columns)
+
+    # Rotate 90° for dental software orientation
+    cpr_image = np.rot90(cpr_image)
+
+    # Percentile contrast normalization
+    p_low = np.percentile(cpr_image, 1)
+    p_high = np.percentile(cpr_image, 99)
+    if p_high <= p_low:
+        p_low, p_high = float(cpr_image.min()), float(cpr_image.max())
+
+    cpr_clipped = np.clip(cpr_image, p_low, p_high)
+    if p_high > p_low:
+        cpr_norm = ((cpr_clipped - p_low) / (p_high - p_low) * 255).astype(np.uint8)
+    else:
+        cpr_norm = np.zeros_like(cpr_image, dtype=np.uint8)
+
+    # Encode to base64 PNG
+    img = Image.fromarray(cpr_norm, mode="L")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    cpr_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    return cpr_b64, arch_points
+
+
+def _coronal_mip_fallback(volume: np.ndarray, H: int, W: int) -> str:
+    """Fallback coronal MIP when arch detection fails."""
+    preview = np.max(volume, axis=0).astype(np.float64)
+    p_low = np.percentile(preview, 1)
+    p_high = np.percentile(preview, 99)
+    if p_high <= p_low:
+        p_low, p_high = float(preview.min()), float(preview.max())
+    preview_c = np.clip(preview, p_low, p_high)
+    if p_high > p_low:
+        opg_norm = ((preview_c - p_low) / (p_high - p_low) * 255).astype(np.uint8)
+    else:
+        opg_norm = np.zeros((H, W), dtype=np.uint8)
+    img = Image.fromarray(opg_norm, mode="L")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+# Global cache for arch points from the last CPR generation
+_last_cpr_arch_points: list[dict] = []
+
+
 def generate_opg(volume: np.ndarray, metadata: dict) -> str:
     """
     Generate an OPG / panoramic radiograph image from the volume.
 
     • Single-slice (2-D) DICOM  → render the slice directly with
       aggressive percentile contrast stretch so anatomy is clearly visible.
-    • Multi-slice (3-D) CBCT    → arch-unwrapped MIP.
+    • Multi-slice (3-D) CBCT    → Curved Planar Reconstruction (CPR).
 
     Returns a base64-encoded PNG string.
     """
+    global _last_cpr_arch_points
     n_slices, H, W = volume.shape
 
     if n_slices <= 3:
@@ -487,29 +665,22 @@ def generate_opg(volume: np.ndarray, metadata: dict) -> str:
         else:
             opg_norm = np.zeros((H, W), dtype=np.uint8)
 
+        _last_cpr_arch_points = []
+        img = Image.fromarray(opg_norm, mode="L")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+
     else:
-        # ── 3-D path: coronal MIP ────────────────────────────────────────
-        # Collapse the slice axis with a Maximum Intensity Projection.
-        # This produces a clean (H, W) anatomical preview from the
-        # (n_slices, H, W) CBCT volume, avoiding the vertical streak
-        # artifacts that the old arch-unwrapped approach produced.
-        preview = np.max(volume, axis=0).astype(np.float64)
+        # ── 3-D path: Curved Planar Reconstruction ───────────────────────
+        cpr_b64, arch_pts = generate_cbct_cpr(volume, metadata)
+        _last_cpr_arch_points = arch_pts
+        return cpr_b64
 
-        p_low  = np.percentile(preview, 1)
-        p_high = np.percentile(preview, 99)
-        if p_high <= p_low:
-            p_low, p_high = float(preview.min()), float(preview.max())
 
-        preview_c = np.clip(preview, p_low, p_high)
-        if p_high > p_low:
-            opg_norm = ((preview_c - p_low) / (p_high - p_low) * 255).astype(np.uint8)
-        else:
-            opg_norm = np.zeros((H, W), dtype=np.uint8)
-
-    img = Image.fromarray(opg_norm, mode="L")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
+def get_last_cpr_arch_points() -> list[dict]:
+    """Retrieve the arch points from the most recent CPR generation."""
+    return _last_cpr_arch_points
 
 
 def detect_mandibular_canal_path_2d(

@@ -29,6 +29,7 @@ from dicom_processor import (
     load_cbct_zip,
     load_image_projection,
     generate_opg,
+    get_last_cpr_arch_points,
     detect_mandibular_canal_path_2d,
     calculate_bone_metrics,
     build_planning_overlay,
@@ -426,7 +427,14 @@ def _analyze_loaded_volume(
             preferred_x=bone_metrics["measurement_location"]["x"],
         )
     planning_overlay = build_planning_overlay(volume, bone_mask, bone_metrics)
-    arch_pts = planning_overlay["outer_contour"]
+
+    # For CBCT, use the arch points from the CPR pipeline (generated during
+    # generate_opg) instead of the planning overlay outer contour.
+    if workflow == "cbct_implant":
+        cpr_arch = get_last_cpr_arch_points()
+        arch_pts = cpr_arch if cpr_arch else planning_overlay["outer_contour"]
+    else:
+        arch_pts = planning_overlay["outer_contour"]
 
     session_id = str(uuid.uuid4())
     _volume_cache[session_id] = {

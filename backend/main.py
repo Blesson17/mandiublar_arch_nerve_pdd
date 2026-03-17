@@ -170,14 +170,26 @@ def _masks_match_volume(volume, bone_mask, nerve_mask) -> bool:
     )
 
 
-def _classify_scan_region(arch_path: list[dict], image_rows: int) -> str:
-    if not arch_path:
-        return "unknown"
-    ys = [float(p.get("y", 0.0)) for p in arch_path]
-    if not ys:
-        return "unknown"
-    median_y = float(np.median(np.asarray(ys, dtype=np.float64)))
-    return "mandible" if median_y >= (float(image_rows) * 0.5) else "maxilla"
+def _classify_scan_region(
+    arch_path: list[dict],
+    image_rows: int,
+    workflow: str,
+    nerve_path: list[dict] | None = None,
+) -> str:
+    if arch_path:
+        ys = [float(p.get("y", 0.0)) for p in arch_path]
+        if ys:
+            median_y = float(np.median(np.asarray(ys, dtype=np.float64)))
+            return "mandible" if median_y >= (float(image_rows) * 0.5) else "maxilla"
+
+    # Panoramic canal workflow is mandibular-focused; prefer mandibular fallback
+    # when arch extraction is missing but a canal-like path exists.
+    if workflow == "panoramic_mandibular_canal":
+        if nerve_path and len(nerve_path) >= 8:
+            return "mandible"
+        return "mandible"
+
+    return "unknown"
 
 
 def _is_ian_detected(scan_region: str, nerve_path: list[dict]) -> bool:
@@ -211,12 +223,16 @@ def _build_recommendation_line(scan_region: str, ian_detected: bool, safe_height
             "Recommended implant placement region: above IAN with safe height "
             f"of {safe_height_mm:.2f} mm."
         )
+    if scan_region == "mandible":
+        return "IAN not confidently detected - manual clinical verification required."
     return "IAN not applicable / not detected - manual clinical verification required."
 
 
 def _build_ian_status_message(scan_region: str, ian_detected: bool) -> str:
     if scan_region == "mandible" and ian_detected:
         return "IAN detected. Safe implant zone highlighted above the nerve."
+    if scan_region == "mandible":
+        return "IAN not confidently detected; manual clinical verification required."
     return "IAN not applicable / not detected - manual clinical verification required."
 
 def detect_input_type(upload_bytes: bytes, filename: Optional[str]) -> Optional[str]:
@@ -518,7 +534,12 @@ def _analyze_loaded_volume(
     else:
         arch_pts = planning_overlay["outer_contour"]
 
-    scan_region = _classify_scan_region(arch_pts, int(analysis_metadata.get("rows", volume.shape[-2])))
+    scan_region = _classify_scan_region(
+        arch_pts,
+        int(analysis_metadata.get("rows", volume.shape[-2])),
+        workflow=workflow,
+        nerve_path=nerve_path,
+    )
     ian_detected = _is_ian_detected(scan_region, nerve_path)
     ian_applicable = scan_region == "mandible"
     ian_status_message = _build_ian_status_message(scan_region, ian_detected)

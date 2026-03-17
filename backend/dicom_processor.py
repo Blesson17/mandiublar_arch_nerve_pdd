@@ -1567,7 +1567,8 @@ def _apply_clinical_guardrails(
     initial_reason: str,
 ) -> tuple[float, float, float, str, str]:
     """Apply hard plausibility checks before surfacing planning recommendations."""
-    reasons: list[str] = []
+    hard_reasons: list[str] = []
+    soft_reasons: list[str] = []
 
     # Prevent impossible numbers from being shown as valid planning values.
     width_mm = float(np.clip(width_mm, 0.0, 35.0))
@@ -1575,18 +1576,18 @@ def _apply_clinical_guardrails(
     safe_height_mm = float(np.clip(safe_height_mm, 0.0, 40.0))
 
     if not (3.0 <= width_mm <= 15.0):
-        reasons.append("SCALE ERROR: ridge width outside plausible range (3-15 mm).")
+        hard_reasons.append("SCALE ERROR: ridge width outside plausible range (3-15 mm).")
     if not (10.0 <= height_mm <= 35.0):
-        reasons.append("SCALE ERROR: bone height outside plausible range (10-35 mm).")
+        hard_reasons.append("SCALE ERROR: bone height outside plausible range (10-35 mm).")
 
     if dataset_type != "volumetric_cbct":
-        reasons.append("2D radiograph detected; volumetric CBCT metrics are not directly valid.")
+        soft_reasons.append("2D radiograph estimate; confirm with volumetric CBCT before final planning.")
     if not has_nerve:
-        reasons.append("Nerve canal not confidently localized at this site.")
+        soft_reasons.append("Nerve canal not confidently localized at this site.")
     if not is_hu_calibrated:
-        reasons.append("Density is uncalibrated for this dataset; HU-based decisions are disabled.")
+        soft_reasons.append("Density is uncalibrated for this dataset; HU-based decisions are disabled.")
     elif density_hu < 150.0:
-        reasons.append("INVALID DENSITY ROI: measured density below expected bone range.")
+        soft_reasons.append("Density ROI is lower than expected bone range.")
 
     all_safe_rules = (
         width_mm > 5.0
@@ -1596,19 +1597,29 @@ def _apply_clinical_guardrails(
         and is_hu_calibrated
         and density_hu > 150.0
         and dataset_type == "volumetric_cbct"
-        and not reasons
+        and not hard_reasons
+        and not soft_reasons
     )
 
     if all_safe_rules:
         return width_mm, height_mm, safe_height_mm, "safe", initial_reason
 
-    if reasons:
+    if hard_reasons:
         return (
             width_mm,
             height_mm,
             safe_height_mm,
             "review",
-            "REQUIRES CLINICAL REVIEW. " + " ".join(reasons),
+            "REQUIRES CLINICAL REVIEW. " + " ".join(hard_reasons + soft_reasons),
+        )
+
+    if soft_reasons:
+        return (
+            width_mm,
+            height_mm,
+            safe_height_mm,
+            "warning" if initial_status != "danger" else "danger",
+            " ".join(soft_reasons),
         )
 
     return width_mm, height_mm, safe_height_mm, initial_status, initial_reason

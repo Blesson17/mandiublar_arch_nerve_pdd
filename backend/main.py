@@ -189,6 +189,12 @@ def _classify_scan_region(
             return "mandible"
         return "mandible"
 
+    if nerve_path:
+        ys = [float(p.get("y", 0.0)) for p in nerve_path]
+        if ys:
+            median_y = float(np.median(np.asarray(ys, dtype=np.float64)))
+            return "mandible" if median_y >= (float(image_rows) * 0.5) else "maxilla"
+
     return "unknown"
 
 
@@ -225,7 +231,9 @@ def _build_recommendation_line(scan_region: str, ian_detected: bool, safe_height
         )
     if scan_region == "mandible":
         return "IAN not confidently detected - manual clinical verification required."
-    return "IAN not applicable / not detected - manual clinical verification required."
+    if scan_region == "maxilla":
+        return "IAN not applicable / not detected - manual clinical verification required."
+    return "IAN not confidently detected - manual clinical verification required."
 
 
 def _build_ian_status_message(scan_region: str, ian_detected: bool) -> str:
@@ -233,7 +241,9 @@ def _build_ian_status_message(scan_region: str, ian_detected: bool) -> str:
         return "IAN detected. Safe implant zone highlighted above the nerve."
     if scan_region == "mandible":
         return "IAN not confidently detected; manual clinical verification required."
-    return "IAN not applicable / not detected - manual clinical verification required."
+    if scan_region == "maxilla":
+        return "IAN not applicable / not detected - manual clinical verification required."
+    return "IAN not confidently detected; manual clinical verification required."
 
 def detect_input_type(upload_bytes: bytes, filename: Optional[str]) -> Optional[str]:
     if filename and filename.lower().endswith(".zip"):

@@ -1575,19 +1575,35 @@ def _apply_clinical_guardrails(
     height_mm = float(np.clip(height_mm, 0.0, 45.0))
     safe_height_mm = float(np.clip(safe_height_mm, 0.0, 40.0))
 
-    if not (3.0 <= width_mm <= 15.0):
-        hard_reasons.append("SCALE ERROR: ridge width outside plausible range (3-15 mm).")
-    if not (10.0 <= height_mm <= 35.0):
-        hard_reasons.append("SCALE ERROR: bone height outside plausible range (10-35 mm).")
+    if dataset_type == "volumetric_cbct":
+        if not (3.0 <= width_mm <= 15.0):
+            hard_reasons.append("SCALE ERROR: ridge width outside plausible range (3-15 mm).")
+        if not (10.0 <= height_mm <= 35.0):
+            hard_reasons.append("SCALE ERROR: bone height outside plausible range (10-35 mm).")
+    else:
+        # Panoramic/2D estimates are less stable: keep warnings for moderate drift,
+        # reserve hard review only for extreme outliers.
+        if not (2.0 <= width_mm <= 20.0):
+            hard_reasons.append("SCALE ERROR: ridge width far outside expected 2D range.")
+        elif not (3.0 <= width_mm <= 15.0):
+            soft_reasons.append("Ridge width is outside typical 3-15 mm planning range.")
+
+        if not (8.0 <= height_mm <= 40.0):
+            hard_reasons.append("SCALE ERROR: bone height far outside expected 2D range.")
+        elif not (10.0 <= height_mm <= 35.0):
+            soft_reasons.append("Bone height is outside typical 10-35 mm planning range.")
 
     if dataset_type != "volumetric_cbct":
         soft_reasons.append("2D radiograph estimate; confirm with volumetric CBCT before final planning.")
     if not has_nerve:
         soft_reasons.append("Nerve canal not confidently localized at this site.")
-    if not is_hu_calibrated:
-        soft_reasons.append("Density is uncalibrated for this dataset; HU-based decisions are disabled.")
-    elif density_hu < 150.0:
-        soft_reasons.append("Density ROI is lower than expected bone range.")
+    if dataset_type == "volumetric_cbct":
+        if not is_hu_calibrated:
+            soft_reasons.append("Density is uncalibrated for this dataset; HU-based decisions are disabled.")
+        elif density_hu < 150.0:
+            soft_reasons.append("Density ROI is lower than expected bone range.")
+    else:
+        soft_reasons.append("HU density value is not used for 2D projections.")
 
     all_safe_rules = (
         width_mm > 5.0

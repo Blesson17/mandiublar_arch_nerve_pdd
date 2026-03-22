@@ -10,7 +10,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +50,7 @@ fun ResultsScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    var lastGeneratedReport by remember { mutableStateOf<java.io.File?>(null) }
     val activeOverlay = remember(analysis.planningOverlay, tapOverlay) {
         tapOverlay ?: analysis.planningOverlay
     }
@@ -223,30 +227,57 @@ fun ResultsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-//                Button(
-//                    onClick = {
-//                        val file = onGenerateReport()
-//                        if (file != null) {
-//                            val uri = FileProvider.getUriForFile(
-//                                context,
-//                                "${context.packageName}.fileprovider",
-//                                file
-//                            )
-//                            val intent = Intent(Intent.ACTION_VIEW).apply {
-//                                setDataAndType(uri, "application/pdf")
-//                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-//                            }
-//                            try {
-//                                context.startActivity(intent)
-//                            } catch (_: Exception) {
-//                                Toast.makeText(context, "PDF saved: ${file.name}", Toast.LENGTH_LONG).show()
-//                            }
-//                        }
-//                    },
-//                    modifier = Modifier.weight(1f)
-//                ) {
-//                    Text("Generate Report")
-//                }
+                Button(
+                    onClick = {
+                        val file = onGenerateReport()
+                        if (file != null) {
+                            lastGeneratedReport = file
+                            val uri = FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                file
+                            )
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/pdf")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            try {
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "PDF saved: ${file.name}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Generate PDF")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val file = lastGeneratedReport ?: onGenerateReport()
+                        if (file == null) {
+                            Toast.makeText(context, "Unable to generate report", Toast.LENGTH_LONG).show()
+                            return@OutlinedButton
+                        }
+
+                        lastGeneratedReport = file
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/pdf"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share report"))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Share")
+                }
 
                 OutlinedButton(
                     onClick = onReset,

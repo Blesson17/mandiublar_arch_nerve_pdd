@@ -13,6 +13,7 @@ import com.s4.belsson.data.model.NervePathPoint
 import com.s4.belsson.data.model.PlanningOverlay
 import com.s4.belsson.data.repository.ImplantRepository
 import com.s4.belsson.data.repository.ImplantRepository.UploadWorkflow
+import com.s4.belsson.data.repository.LocalMedicalRepository
 import com.s4.belsson.util.MeasurementManager
 import com.s4.belsson.util.ReportGenerator
 import kotlinx.coroutines.async
@@ -55,6 +56,7 @@ sealed class AuthUiState {
 class PlanningViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = ImplantRepository(application)
+    private val localRepository = LocalMedicalRepository(application)
     private val reportGenerator = ReportGenerator(application)
 
     private val _uiState = MutableStateFlow<PlanningUiState>(PlanningUiState.Idle)
@@ -224,6 +226,10 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
                     panoramicBitmap = panoramicBitmap,
                     panoramicMeasurementManager = panoramicMm,
                 )
+
+                viewModelScope.launch {
+                    localRepository.upsertPatientFromAnalysis(panoramicResponse)
+                }
             } catch (oom: OutOfMemoryError) {
                 _uiState.value = PlanningUiState.Error(
                     "Out of memory — the CBCT dataset is too large for this device."
@@ -276,7 +282,7 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
         val preferred = state.panoramicAnalysis
         val preferredBitmap = state.panoramicBitmap
 
-        return reportGenerator.generateReport(
+        val file = reportGenerator.generateReport(
             analysis = preferred,
             opgBitmap = preferredBitmap,
             toothLabel = toothLabel,
@@ -285,6 +291,44 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
             tapIanStatusMessage = _tapIanStatusMessage.value,
             tapSafeZonePath = _tapSafeZonePath.value ?: emptyList()
         )
+
+        viewModelScope.launch {
+            val patientId = localRepository.upsertPatientFromAnalysis(preferred)
+            localRepository.saveReport(patientId, preferred, file.absolutePath)
+        }
+
+        return file
+    }
+
+    fun generateCombinedReport(toothLabel: String = "Tooth 36"): File? {
+        val state = _uiState.value
+        if (state !is PlanningUiState.Success) return null
+
+        val file = reportGenerator.generateCombinedReport(
+            reports = listOf(
+                ReportGenerator.ReportPayload(
+                    analysis = state.cbctAnalysis,
+                    opgBitmap = state.cbctBitmap,
+                    toothLabel = toothLabel,
+                ),
+                ReportGenerator.ReportPayload(
+                    analysis = state.panoramicAnalysis,
+                    opgBitmap = state.panoramicBitmap,
+                    toothLabel = toothLabel,
+                    tapMetrics = _tapMetrics.value,
+                    tapRecommendationLine = _tapRecommendationLine.value,
+                    tapIanStatusMessage = _tapIanStatusMessage.value,
+                    tapSafeZonePath = _tapSafeZonePath.value ?: emptyList(),
+                ),
+            )
+        )
+
+        viewModelScope.launch {
+            val patientId = localRepository.upsertPatientFromAnalysis(state.panoramicAnalysis)
+            localRepository.saveReport(patientId, state.panoramicAnalysis, file.absolutePath)
+        }
+
+        return file
     }
 
     // ─────────────────────────────────────────────

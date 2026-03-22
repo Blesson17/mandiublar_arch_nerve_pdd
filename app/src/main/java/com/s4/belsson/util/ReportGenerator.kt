@@ -14,6 +14,16 @@ import java.util.*
  * Generates a PDF report summarising dental implant planning results.
  */
 class ReportGenerator(private val context: Context) {
+    data class ReportPayload(
+        val analysis: AnalysisResponse,
+        val opgBitmap: Bitmap?,
+        val toothLabel: String = "Tooth 36",
+        val tapMetrics: BoneMetrics? = null,
+        val tapRecommendationLine: String? = null,
+        val tapIanStatusMessage: String? = null,
+        val tapSafeZonePath: List<NervePathPoint> = emptyList(),
+    )
+
     companion object {
         private const val PAGE_WIDTH = 595   // A4 in points
         private const val PAGE_HEIGHT = 842
@@ -64,6 +74,87 @@ class ReportGenerator(private val context: Context) {
     private var canvas: Canvas? = null
     private var pageNumber = 0
     private var y = MARGIN
+
+    fun generateIndividualReports(reports: List<ReportPayload>): List<File> {
+        return reports.map { payload ->
+            generateReport(
+                analysis = payload.analysis,
+                opgBitmap = payload.opgBitmap,
+                toothLabel = payload.toothLabel,
+                tapMetrics = payload.tapMetrics,
+                tapRecommendationLine = payload.tapRecommendationLine,
+                tapIanStatusMessage = payload.tapIanStatusMessage,
+                tapSafeZonePath = payload.tapSafeZonePath,
+            )
+        }
+    }
+
+    fun generateCombinedReport(reports: List<ReportPayload>): File {
+        require(reports.isNotEmpty()) { "At least one report payload is required." }
+
+        document = PdfDocument()
+        newPage()
+
+        draw { c ->
+            c.drawText("Combined Dental Implant Report", MARGIN, y, titlePaint)
+        }
+        y += 8f
+        draw { c ->
+            c.drawLine(MARGIN, y, PAGE_WIDTH - MARGIN, y, dividerPaint)
+        }
+        y += 20f
+
+        reports.forEachIndexed { index, payload ->
+            val analysis = payload.analysis
+            val regionLabel = analysis.scanRegion.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase() else it.toString()
+            }
+            ensureSpace(220f)
+            sectionHeader("Case ${index + 1}: ${cleanDicomName(analysis.patientName)}")
+            infoRow("Session ID", analysis.sessionId)
+            infoRow("Workflow", analysis.workflow)
+            infoRow("Scan Region", regionLabel)
+            infoRow("Planned Site", payload.toothLabel)
+            infoRow("Safe Height", "${String.format(Locale.US, "%.2f", analysis.boneMetrics.safeHeightMm)} mm")
+
+            val recommendation = payload.tapRecommendationLine?.takeIf { it.isNotBlank() }
+                ?: analysis.recommendationLine
+            if (recommendation.isNotBlank()) {
+                ensureSpace(26f)
+                draw { c -> c.drawText("Recommendation: $recommendation", MARGIN, y, bodyPaint) }
+                y += 20f
+            }
+
+            payload.opgBitmap?.let { bmp ->
+                val maxImageHeight = 170f
+                val scaledWidth = CONTENT_WIDTH
+                val scaledHeight = (scaledWidth * bmp.height / bmp.width.toFloat()).coerceAtMost(maxImageHeight)
+                ensureSpace(scaledHeight + 16f)
+                val preview = Bitmap.createScaledBitmap(
+                    bmp,
+                    scaledWidth.toInt(),
+                    scaledHeight.toInt(),
+                    true
+                )
+                draw { c -> c.drawBitmap(preview, MARGIN, y, null) }
+                y += scaledHeight + 10f
+            }
+
+            if (index < reports.lastIndex) {
+                ensureSpace(14f)
+                draw { c -> c.drawLine(MARGIN, y, PAGE_WIDTH - MARGIN, y, dividerPaint) }
+                y += 12f
+            }
+        }
+
+        drawFooter()
+        document.finishPage(currentPage!!)
+
+        val file = createReportFile("combined_implant_report")
+        FileOutputStream(file).use { document.writeTo(it) }
+        document.close()
+        return file
+    }
 
     /**
      * Generate a PDF report and return the File.
@@ -344,12 +435,16 @@ class ReportGenerator(private val context: Context) {
         document.finishPage(currentPage!!)
 
         // Save to app files directory
-        val reportsDir = File(context.filesDir, "reports").apply { mkdirs() }
-        val file = File(reportsDir, "implant_report_${System.currentTimeMillis()}.pdf")
+        val file = createReportFile("implant_report")
         FileOutputStream(file).use { document.writeTo(it) }
         document.close()
 
         return file
+    }
+
+    private fun createReportFile(prefix: String): File {
+        val reportsDir = File(context.filesDir, "reports").apply { mkdirs() }
+        return File(reportsDir, "${prefix}_${System.currentTimeMillis()}.pdf")
     }
 
     // ── Overlay rendering ──────────────────────────────────────────────────────

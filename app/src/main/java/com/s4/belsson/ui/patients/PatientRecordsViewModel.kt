@@ -95,4 +95,72 @@ class PatientRecordsViewModel(application: Application) : AndroidViewModel(appli
             }
         }
     }
+
+    fun updatePatient(
+        patientId: Long,
+        firstName: String,
+        lastName: String,
+        dob: String?,
+        gender: String?,
+        phone: String?,
+        email: String?,
+    ) {
+        if (firstName.isBlank() || lastName.isBlank()) {
+            _uiState.update { it.copy(message = "First and last name are required") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingPatient = true, message = null) }
+            runCatching {
+                localRepository.updatePatient(
+                    patientId = patientId,
+                    firstName = firstName.trim(),
+                    lastName = lastName.trim(),
+                    dob = dob?.trim().takeUnless { it.isNullOrBlank() },
+                    gender = gender?.trim().takeUnless { it.isNullOrBlank() },
+                    phone = phone?.trim().takeUnless { it.isNullOrBlank() },
+                    email = email?.trim().takeUnless { it.isNullOrBlank() },
+                )
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isSavingPatient = false,
+                        message = "Patient updated",
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isSavingPatient = false,
+                        message = err.message ?: "Failed to update patient",
+                    )
+                }
+            }
+        }
+    }
+
+    fun deletePatient(patientId: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingPatient = true, message = null) }
+            runCatching {
+                localRepository.deletePatient(patientId)
+            }.onSuccess {
+                _uiState.update {
+                    it.copy(
+                        isSavingPatient = false,
+                        selectedPatientId = if (it.selectedPatientId == patientId) null else it.selectedPatientId,
+                        message = "Patient deleted",
+                    )
+                }
+            }.onFailure { err ->
+                _uiState.update {
+                    it.copy(
+                        isSavingPatient = false,
+                        message = err.message ?: "Failed to delete patient",
+                    )
+                }
+            }
+        }
+    }
 }

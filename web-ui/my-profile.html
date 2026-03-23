@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - ImplantAI</title>
+    <script src="theme-manager.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            background-color: #F8FAFC;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Sidebar Reused */
+        .sidebar {
+            width: 260px;
+            background: #FFFFFF;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            border-right: 1px solid #E2E8F0;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 3rem;
+            padding-left: 0.5rem;
+        }
+
+        .logo-box {
+            width: 32px;
+            height: 32px;
+            background-color: #2563EB;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1E293B;
+            letter-spacing: -0.02em;
+        }
+
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex-grow: 1;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: #64748B;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover {
+            background-color: #F1F5F9;
+            color: #334155;
+        }
+
+        .nav-item.active {
+            background-color: #EFF6FF;
+            color: #2563EB;
+        }
+
+        .nav-item i {
+            font-size: 1.25rem;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 0.5rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+
+        .avatar-circle {
+            width: 40px;
+            height: 40px;
+            background-color: #2563EB;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .profile-info h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #334155;
+            margin: 0;
+        }
+
+        .profile-info p {
+            font-size: 0.75rem;
+            color: #94A3B8;
+            margin: 0;
+        }
+
+        .sign-out {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: #94A3B8;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+
+        /* Main Content Layout */
+        .main-content {
+            flex: 1;
+            padding: 2rem 3rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .page-header {
+            margin-bottom: 2rem;
+        }
+
+        .page-header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1E293B;
+        }
+
+        /* Settings Grid */
+        .settings-container {
+            display: grid;
+            grid-template-columns: 240px 1fr;
+            gap: 3rem;
+            align-items: start;
+        }
+
+        /* Settings Sidebar */
+        .settings-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .settings-group-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #94A3B8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+
+        .settings-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0.75rem;
+            color: #64748B;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.15s;
+        }
+
+        .settings-nav-item:hover {
+            color: #334155;
+            background: #F8FAFC;
+        }
+
+        .settings-nav-item.active {
+            background: #EFF6FF;
+            color: #2563EB;
+            font-weight: 600;
+        }
+
+        .delete-account {
+            color: #EF4444;
+        }
+
+        .delete-account:hover {
+            color: #DC2626;
+            background: #FEF2F2;
+        }
+
+        /* Profile Specific Styles */
+        .profile-content {
+            display: flex;
+            flex-direction: column;
+            gap: 2.5rem;
+            max-width: 900px;
+        }
+
+        /* Hero Card */
+        .profile-hero-card {
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            /* Subtle shadow per design */
+            position: relative;
+        }
+
+        .hero-banner {
+            height: 140px;
+            background: linear-gradient(135deg, #2563EB 0%, #3B82F6 100%);
+        }
+
+        .hero-body {
+            padding: 1rem 2rem 2rem 2rem;
+            position: relative;
+        }
+
+        .big-avatar {
+            width: 120px;
+            /* Large avatar */
+            height: 120px;
+            background: #2563EB;
+            border-radius: 50%;
+            border: 5px solid white;
+            position: absolute;
+            top: -60px;
+            /* Pull up into banner */
+            left: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 2.5rem;
+            font-weight: 600;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .edit-btn-float {
+            position: absolute;
+            top: 1.5rem;
+            right: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #64748B;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .photo-btn {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            background: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748B;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            border: 1px solid #E2E8F0;
+        }
+
+        .profile-text-content {
+            margin-top: 3.5rem;
+            /* Space for the overlapping avatar */
+        }
+
+        .profile-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 0.25rem;
+        }
+
+        .profile-role {
+            color: #64748B;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .tags-row {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .tag {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .tag-green {
+            background: #DCFCE7;
+            color: #16A34A;
+        }
+
+        .tag-blue {
+            background: #DBEAFE;
+            color: #2563EB;
+        }
+
+
+        /* Contact Info */
+        .section-header {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 1.25rem;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .address-card {
+            grid-column: span 2;
+        }
+
+        .info-card {
+            background: #F8FAFC;
+            /* Light gray bg per design */
+            padding: 1.25rem;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .icon-box {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 1.25rem;
+        }
+
+        .icon-blue {
+            background: #DBEAFE;
+            color: #2563EB;
+        }
+
+        .icon-green {
+            background: #DCFCE7;
+            color: #16A34A;
+        }
+
+        .icon-yellow {
+            background: #FEF3C7;
+            color: #D97706;
+        }
+
+        .info-dets h5 {
+            font-size: 0.8rem;
+            color: #94A3B8;
+            margin: 0 0 0.25rem 0;
+            font-weight: 500;
+        }
+
+        .info-dets p {
+            font-size: 0.95rem;
+            color: #1E293B;
+            margin: 0;
+            font-weight: 600;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+        }
+
+        .stat-card {
+            background: #F8FAFC;
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 800;
+            /* Extra bold */
+            margin-bottom: 0.5rem;
+        }
+
+        .text-blue {
+            color: #2563EB;
+        }
+
+        .text-green {
+            color: #10B981;
+        }
+
+        .text-purple {
+            color: #8B5CF6;
+        }
+
+        .text-yellow {
+            color: #F59E0B;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #94A3B8;
+            font-weight: 500;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <div class="logo-box"><i class="ph-bold ph-wave-sine"></i></div>
+            <span class="logo-text">ImplantAI</span>
+        </div>
+
+        <nav class="nav-menu">
+            <a href="dashboard.html" class="nav-item">
+                <i class="ph ph-squares-four"></i>
+                Dashboard
+            </a>
+            <a href="upload.html" class="nav-item">
+                <i class="ph ph-upload-simple"></i>
+                Upload
+            </a>
+            <a href="#" class="nav-item">
+                <i class="ph ph-heartbeat"></i>
+                Analysis
+            </a>
+            <a href="#" class="nav-item">
+                <i class="ph ph-file-text"></i>
+                Reports
+            </a>
+            <a href="settings.html" class="nav-item active">
+                <i class="ph ph-gear"></i>
+                Settings
+            </a>
+        </nav>
+
+        <div>
+            <div class="user-profile" onclick="window.location.href='my-profile.html'">
+                <div class="avatar-circle">SW</div>
+                <div class="profile-info">
+                    <h4 id="sidebar-name">Dr. Sarah Wilson</h4>
+                    <p>Oral Surgeon</p>
+                </div>
+                <i class="ph ph-caret-right" style="margin-left: auto; color: #94A3B8;"></i>
+            </div>
+            <a href="index.html" class="sign-out">
+                <i class="ph ph-sign-out"></i>
+                Sign Out
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="page-header">
+            <h1>My Profile</h1>
+        </div>
+
+        <div class="settings-container">
+            <!-- Settings Sidebar -->
+            <div class="settings-sidebar">
+
+                <div>
+                    <div class="settings-group-title">Account</div>
+                    <a href="my-profile.html" class="settings-nav-item active">
+                        <i class="ph ph-user"></i> My Profile
+                    </a>
+                    <a href="settings.html" class="settings-nav-item">
+                        <i class="ph ph-hard-drive"></i> Account Settings
+                    </a>
+                    <a href="settings-notifications.html" class="settings-nav-item">
+                        <i class="ph ph-bell"></i> Notifications
+                    </a>
+                    <a href="settings-privacy.html" class="settings-nav-item">
+                        <i class="ph ph-shield-check"></i> Privacy & Security
+                    </a>
+                </div>
+
+                <!-- (Other Groups same as settings.html, omitted for brevity but keeping structure similar) -->
+                <div>
+                    <div class="settings-group-title">Workspace</div>
+                    <a href="settings-team.html" class="settings-nav-item"><i class="ph ph-users"></i> Team Members</a>
+                    <a href="settings-integrations.html" class="settings-nav-item"><i class="ph ph-plugs"></i>
+                        Integrations</a>
+                    <a href="settings-billing.html" class="settings-nav-item"><i class="ph ph-credit-card"></i> Billing
+                        & Plans</a>
+                </div>
+
+                <div>
+                    <div class="settings-group-title">Preferences</div>
+                    <a href="settings-appearance.html" class="settings-nav-item"><i class="ph ph-palette"></i>
+                        Appearance</a>
+                    <a href="settings-language.html" class="settings-nav-item"><i class="ph ph-globe"></i> Language &
+                        Region</a>
+                </div>
+
+                <div>
+                    <div class="settings-group-title">Support</div>
+                    <a href="settings-help.html" class="settings-nav-item"><i class="ph ph-question"></i> Help &
+                        Support</a>
+                    <a href="settings-about.html" class="settings-nav-item"><i class="ph ph-info"></i> About</a>
+                </div>
+
+                <div>
+                    <div class="settings-group-title">Danger Zone</div>
+                    <a href="#" class="settings-nav-item delete-account"><i class="ph ph-trash"></i> Delete Account</a>
+                </div>
+
+            </div>
+
+            <!-- Profile Content -->
+            <div class="profile-content">
+
+                <!-- Hero Card -->
+                <div class="profile-hero-card">
+                    <div class="hero-banner"></div>
+                    <div class="hero-body">
+                        <div class="big-avatar">
+                            <span id="profile-initials">SW</span>
+                            <div class="photo-btn" onclick="document.getElementById('avatar-upload').click()">
+                                <i class="ph ph-camera"></i>
+                            </div>
+                            <input type="file" id="avatar-upload" style="display: none;" accept="image/*">
+                        </div>
+
+                        <div class="edit-btn-float" onclick="enableEdit()">
+                            <i class="ph-bold ph-pencil-simple"></i> Edit Profile
+                        </div>
+
+                        <div class="profile-text-content">
+                            <h2 class="profile-name" id="profile-name-display">Dr. Sarah Wilson</h2>
+                            <input type="text" id="profile-name-input"
+                                style="display: none; font-size: 1.5rem; font-weight: 700; color: #1E293B; border: 1px solid #E2E8F0; padding: 0.25rem 0.5rem; border-radius: 6px; margin-bottom: 0.5rem;"
+                                value="Dr. Sarah Wilson">
+
+                            <p class="profile-role">Oral & Maxillofacial Surgeon</p>
+                            <div class="tags-row">
+                                <span class="tag tag-green">Verified</span>
+                                <span class="tag tag-blue">Pro Member</span>
+                            </div>
+                            <!-- Save Actions -->
+                            <div id="edit-actions" style="display: none; gap: 0.5rem; margin-top: 1rem;">
+                                <button onclick="saveProfile()"
+                                    style="background: #2563EB; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer;">Save</button>
+                                <button onclick="cancelEdit()"
+                                    style="background: white; color: #64748B; border: 1px solid #E2E8F0; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer;">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contact Information -->
+                <div>
+                    <h3 class="section-header">Contact Information</h3>
+                    <div class="contact-grid">
+                        <div class="info-card">
+                            <div class="icon-box icon-blue"><i class="ph-fill ph-envelope"></i></div>
+                            <div class="info-dets">
+                                <h5>Email</h5>
+                                <p id="email-display">dr.wilson@advanceddental.com</p>
+                                <input type="text" id="email-input"
+                                    style="display: none; width: 100%; border: 1px solid #E2E8F0; padding: 0.25rem; border-radius: 4px; font-size: 0.9rem;"
+                                    value="dr.wilson@advanceddental.com">
+                            </div>
+                        </div>
+                        <div class="info-card">
+                            <div class="icon-box icon-green"><i class="ph-fill ph-phone-call"></i></div>
+                            <div class="info-dets">
+                                <h5>Phone</h5>
+                                <p id="phone-display">+1 (555) 234-5678</p>
+                                <input type="text" id="phone-input"
+                                    style="display: none; width: 100%; border: 1px solid #E2E8F0; padding: 0.25rem; border-radius: 4px; font-size: 0.9rem;"
+                                    value="+1 (555) 234-5678">
+                            </div>
+                        </div>
+                        <div class="info-card address-card">
+                            <div class="icon-box icon-yellow"><i class="ph-fill ph-map-pin"></i></div>
+                            <div class="info-dets">
+                                <h5>Clinic Address</h5>
+                                <p id="address-display">456 Medical Center Drive, Suite 200, San Francisco, CA 94102</p>
+                                <input type="text" id="address-input"
+                                    style="display: none; width: 100%; border: 1px solid #E2E8F0; padding: 0.25rem; border-radius: 4px; font-size: 0.9rem;"
+                                    value="456 Medical Center Drive, Suite 200, San Francisco, CA 94102">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics -->
+                <div>
+                    <h3 class="section-header">Practice Statistics</h3>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value text-blue">2,500</div>
+                            <div class="stat-label">Implants<br>Placed</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-green">98.5%</div>
+                            <div class="stat-label">Success<br>Rate</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-purple">1,200+</div>
+                            <div class="stat-label">Patients<br>Treated</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-yellow">4.9</div>
+                            <div class="stat-label">Patient<br>Rating</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const API_URL = '/';
+        const token = localStorage.getItem('implantAI_token');
+
+        if (!token) window.location.href = 'index.html';
+
+        document.addEventListener('DOMContentLoaded', fetchProfile);
+
+        async function fetchProfile() {
+            try {
+                const res = await fetch(API_URL + 'user', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (!res.ok) throw new Error("Failed to load profile");
+
+                const user = await res.json();
+
+                // Update UI
+                updateDisplay('profile-name-display', user.name);
+                updateDisplay('email-display', user.email);
+                updateDisplay('phone-display', user.phone || 'Not set');
+                updateDisplay('address-display', user.practice_name || 'Not set'); // Using practice name as proxy for address/practice for now
+                updateDisplay('sidebar-name', user.name);
+
+                // Update Inputs
+                updateInput('profile-name-input', user.name);
+                updateInput('email-input', user.email);
+                updateInput('phone-input', user.phone);
+                updateInput('address-input', user.practice_name);
+
+                // Initials
+                const initials = (user.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                document.querySelectorAll('.avatar-circle').forEach(el => el.innerText = initials);
+                document.getElementById('profile-initials').innerText = initials;
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function updateDisplay(id, val) {
+            const el = document.getElementById(id);
+            if (el) el.innerText = val;
+        }
+
+        function updateInput(id, val) {
+            const el = document.getElementById(id);
+            if (el) el.value = val || '';
+        }
+
+        function enableEdit() {
+            toggleEditMode(true);
+        }
+
+        function cancelEdit() {
+            toggleEditMode(false);
+        }
+
+        function toggleEditMode(editing) {
+            const displayStyle = editing ? 'none' : 'block';
+            const inputStyle = editing ? 'block' : 'none';
+
+            // Fields to toggle
+            ['profile-name', 'email', 'phone', 'address'].forEach(field => {
+                const disp = document.getElementById(field + '-display');
+                if (disp) disp.style.display = displayStyle;
+                const inp = document.getElementById(field + '-input');
+                if (inp) inp.style.display = inputStyle;
+            });
+
+            document.getElementById('edit-actions').style.display = editing ? 'flex' : 'none';
+            const editBtn = document.querySelector('.edit-btn-float');
+            if (editBtn) editBtn.style.display = editing ? 'none' : 'flex';
+        }
+
+        async function saveProfile() {
+            const name = document.getElementById('profile-name-input').value;
+            const email = document.getElementById('email-input').value;
+            const phone = document.getElementById('phone-input').value;
+            const practice = document.getElementById('address-input').value; // Mapping address input to practice name for now
+
+            const payload = {
+                name, email, phone,
+                practice_name: practice,
+                bio: '',
+                specialty: 'Oral Surgeon' // Default or add field
+            };
+
+            try {
+                const res = await fetch(API_URL + 'user', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    alert("Profile updated!");
+                    toggleEditMode(false);
+                    fetchProfile(); // Refresh
+                } else {
+                    alert("Failed to update profile");
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Network error");
+            }
+        }
+    </script>
+</body>
+
+</html>

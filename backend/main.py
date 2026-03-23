@@ -13,7 +13,6 @@ import io
 import uuid
 import logging
 import os
-import random
 import shutil
 import time
 import traceback
@@ -42,6 +41,11 @@ from dicom_processor import (
     select_default_measurement_site,
 )
 from segmentation_model import UNetSegmentor, extract_nerve_path_2d
+
+try:
+    import google.generativeai as genai
+except Exception:  # pragma: no cover
+    genai = None
 
 # ---------- Logging ----------
 logging.basicConfig(level=logging.INFO)
@@ -226,8 +230,30 @@ class CaseAnalysisResponse(BaseModel):
     bone_height: str
     nerve_distance: str
     safe_implant_length: str
+    opg_image_base64: Optional[str] = None
+    ian_status_message: Optional[str] = None
+    recommendation_line: Optional[str] = None
     clinical_report: Optional[str] = None
     patient_explanation: Optional[str] = None
+
+
+class HistoryReportSummary(BaseModel):
+    case_id: str
+    created_at: str
+    bone_width_36: str
+    bone_height: str
+    nerve_distance: str
+    safe_implant_length: str
+    clinical_report: Optional[str] = None
+
+
+class HistoryInsightResponse(BaseModel):
+    case_id: str
+    patient_name: str
+    selected_oldest_reports: list[HistoryReportSummary]
+    selected_newest_reports: list[HistoryReportSummary]
+    insight: str
+    source: str
 
 
 class ChatRequest(BaseModel):
@@ -561,6 +587,128 @@ def _chat_reply(message: str) -> str:
     if "cost" in msg or "price" in msg or "billing" in msg:
         return "Billing and subscription details are available in Settings > Billing."
     return "I can help with implant planning, CBCT interpretation, and safety checks."
+
+
+def _history_item_to_text(item: dict) -> str:
+    return (
+        f"case_id={item.get('case_id')}"
+        f", created_at={item.get('created_at')}"
+        f", bone_width_36={item.get('bone_width_36')}"
+        f", bone_height={item.get('bone_height')}"
+        f", nerve_distance={item.get('nerve_distance')}"
+        f", safe_implant_length={item.get('safe_implant_length')}"
+        f", clinical_report={item.get('clinical_report') or '-'}"
+    )
+
+
+def _safe_float(raw_value: str | None) -> float:
+    try:
+        return float(raw_value or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _build_history_fallback(selected: list[dict], patient_name: str) -> str:
+    if not selected:
+        return f"No prior reports found for {patient_name}."
+
+    avg_height = float(np.mean([_safe_float(item.get("bone_height")) for item in selected]))
+    avg_width = float(np.mean([_safe_float(item.get("bone_width_36")) for item in selected]))
+    min_nerve_distance = min(_safe_float(item.get("nerve_distance")) for item in selected)
+
+    return (
+        f"Historical trend for {patient_name}: based on {len(selected)} prior reports, "
+        f"average bone height is {avg_height:.1f} mm and average bone width is {avg_width:.1f} mm. "
+        f"Lowest recorded nerve distance is {min_nerve_distance:.1f} mm. "
+        "Use this as context and confirm final implant decisions with current CBCT cross-sections."
+    )
+
+
+def _generate_history_insight_with_gemini(patient_name: str, selected_reports: list[dict]) -> tuple[str, str]:
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key or genai is None:
+        return _build_history_fallback(selected_reports, patient_name), "fallback"
+
+    prompt = "\n".join([
+        "You are assisting a dental implant clinician.",
+        f"Patient: {patient_name}",
+        "Use only the provided historical reports to summarize trends and risks.",
+        "Provide concise clinical insight in 4-6 sentences.",
+        "Include trend in bone dimensions, nerve-distance stability, and one clear recommendation.",
+        "Historical reports:",
+        *[f"- {_history_item_to_text(item)}" for item in selected_reports],
+    ])
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        text = (getattr(response, "text", "") or "").strip()
+        if text:
+            return text, "gemini"
+    except Exception:
+        logger.exception("Gemini history insight failed")
+
+    return _build_history_fallback(selected_reports, patient_name), "fallback"
+
+
+def _build_case_report_fallback(case_row: dict, analysis: AnalysisResponse) -> tuple[str, str, str]:
+    metrics = analysis.bone_metrics
+    patient_name = f"{case_row.get('fname', '')} {case_row.get('lname', '')}".strip() or "the patient"
+    clinical_report = (
+        f"Clinical summary for {patient_name}: bone width is {metrics.width_mm:.1f} mm, "
+        f"bone height is {metrics.height_mm:.1f} mm, and safe height is {metrics.safe_height_mm:.1f} mm. "
+        f"{analysis.ian_status_message} {analysis.recommendation_line}"
+    )
+    patient_explanation = (
+        f"Your scan shows a bone width of {metrics.width_mm:.1f} mm and safe implant height of "
+        f"{metrics.safe_height_mm:.1f} mm. {analysis.recommendation_line}"
+    )
+    return clinical_report, patient_explanation, "fallback"
+
+
+def _generate_case_report_with_gemini(case_row: dict, analysis: AnalysisResponse) -> tuple[str, str, str]:
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key or genai is None:
+        return _build_case_report_fallback(case_row, analysis)
+
+    metrics = analysis.bone_metrics
+    patient_name = f"{case_row.get('fname', '')} {case_row.get('lname', '')}".strip() or "Unknown"
+    prompt = "\n".join([
+        "You are assisting a dental implant clinician.",
+        f"Patient: {patient_name}",
+        "Use ONLY the provided CBCT/panoramic analysis outputs.",
+        "Return valid JSON with keys: clinical_report, patient_explanation.",
+        "clinical_report: 4-6 concise clinician-facing sentences.",
+        "patient_explanation: 2-3 plain-language sentences.",
+        "Analysis inputs:",
+        f"- bone_width_mm: {metrics.width_mm}",
+        f"- bone_height_mm: {metrics.height_mm}",
+        f"- safe_height_mm: {metrics.safe_height_mm}",
+        f"- safety_status: {metrics.safety_status}",
+        f"- safety_reason: {metrics.safety_reason}",
+        f"- ian_status_message: {analysis.ian_status_message}",
+        f"- recommendation_line: {analysis.recommendation_line}",
+        "Do not include markdown fences.",
+    ])
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        raw = (getattr(response, "text", "") or "").strip()
+        if raw:
+            import json
+
+            data = json.loads(raw)
+            clinical = str(data.get("clinical_report") or "").strip()
+            patient = str(data.get("patient_explanation") or "").strip()
+            if clinical and patient:
+                return clinical, patient, "gemini"
+    except Exception:
+        logger.exception("Gemini case report generation failed")
+
+    return _build_case_report_fallback(case_row, analysis)
 
 
 def _analyze_dicom_bytes(
@@ -1056,36 +1204,74 @@ async def run_case_analysis(case_id: str, user: dict = Depends(require_user)):
         raise HTTPException(status_code=404, detail="Case not found")
 
     auth_db.update_case_status(int(user["id"]), case_id, "Analyzing...")
+    files = auth_db.list_case_files(case_row["id"])
+    if not files:
+        auth_db.update_case_status(int(user["id"]), case_id, "Ready")
+        raise HTTPException(status_code=400, detail="No uploaded files found for this case")
 
-    arch_curve_data = [[x, 0.005 * (x - 150) ** 2 + 50] for x in range(0, 300, 10)]
-    nerve_path_data = [[x, 0.005 * (x - 150) ** 2 + 150 + random.uniform(-2, 2)] for x in range(50, 250, 10)]
-    bone_width = round(random.uniform(9.0, 12.0), 1)
-    bone_height = round(random.uniform(11.0, 15.0), 1)
-    nerve_dist = round(random.uniform(3.0, 5.0), 1)
-    safe_length = round(bone_height - 2.0, 1)
+    latest_file = files[-1]
+    file_path = latest_file.get("file_path") or ""
+    if not file_path or not os.path.exists(file_path):
+        auth_db.update_case_status(int(user["id"]), case_id, "Ready")
+        raise HTTPException(status_code=400, detail="Uploaded file is missing on server")
 
-    analysis = auth_db.save_case_analysis(
-        case_row["id"],
-        {
-            "arch_curve_data": arch_curve_data,
-            "nerve_path_data": nerve_path_data,
-            "bone_width_36": str(bone_width),
-            "bone_height": str(bone_height),
-            "nerve_distance": str(nerve_dist),
-            "safe_implant_length": str(safe_length),
+    try:
+        with open(file_path, "rb") as fp:
+            payload = fp.read()
+
+        input_type = detect_input_type(payload, latest_file.get("filename"))
+        workflow = "cbct_implant" if input_type in ("zip_cbct", "dicom_single") else "panoramic_mandibular_canal"
+        analysis_result = _analyze_dicom_bytes(
+            dicom_bytes=payload,
+            tooth_x=None,
+            tooth_y=None,
+            workflow=workflow,
+            file_name=latest_file.get("filename"),
+        )
+
+        clinical_report, patient_explanation, report_source = _generate_case_report_with_gemini(
+            case_row,
+            analysis_result,
+        )
+
+        bone_metrics = analysis_result.bone_metrics
+        nerve_points = [[float(p.x), float(p.y)] for p in analysis_result.nerve_path]
+        arch_points = [[float(p.x), float(p.y)] for p in analysis_result.arch_path]
+        nerve_distance = max(0.0, float(bone_metrics.height_mm - bone_metrics.safe_height_mm))
+
+        saved = auth_db.save_case_analysis(
+            case_row["id"],
+            {
+                "arch_curve_data": arch_points,
+                "nerve_path_data": nerve_points,
+                "bone_width_36": f"{bone_metrics.width_mm:.1f}",
+                "bone_height": f"{bone_metrics.height_mm:.1f}",
+                "nerve_distance": f"{nerve_distance:.1f}",
+                "safe_implant_length": f"{bone_metrics.safe_height_mm:.1f}",
+                "clinical_report": clinical_report,
+                "patient_explanation": patient_explanation,
+            },
+        )
+
+        auth_db.update_case_status(int(user["id"]), case_id, "Analysis Complete")
+        response_payload = {
+            **saved,
+            "opg_image_base64": analysis_result.opg_image_base64,
+            "ian_status_message": analysis_result.ian_status_message,
+            "recommendation_line": analysis_result.recommendation_line,
             "clinical_report": (
-                "Clinical summary: bone dimensions appear suitable for standard implant placement "
-                "with routine safety checks."
-            ),
-            "patient_explanation": (
-                "Your scan indicates adequate bone volume for implant planning. "
-                "Final placement is confirmed by your clinician."
-            ),
-        },
-    )
-
-    auth_db.update_case_status(int(user["id"]), case_id, "Analysis Complete")
-    return CaseAnalysisResponse(**analysis)
+                f"{saved.get('clinical_report') or ''}"
+                f" (generated via {report_source})"
+            ).strip(),
+        }
+        return CaseAnalysisResponse(**response_payload)
+    except HTTPException:
+        auth_db.update_case_status(int(user["id"]), case_id, "Ready")
+        raise
+    except Exception as exc:
+        logger.exception("Case analysis failed for case_id=%s", case_id)
+        auth_db.update_case_status(int(user["id"]), case_id, "Ready")
+        raise HTTPException(status_code=500, detail=f"Case analysis failed: {exc}") from exc
 
 
 @app.get("/analysis/result/{case_id}", response_model=CaseAnalysisResponse)
@@ -1097,7 +1283,50 @@ async def get_case_analysis_result(case_id: str, user: dict = Depends(require_us
     analysis = auth_db.get_analysis_by_case(case_row["id"])
     if analysis is None:
         raise HTTPException(status_code=404, detail="Analysis not found")
+    analysis.setdefault("opg_image_base64", None)
+    analysis.setdefault("ian_status_message", None)
+    analysis.setdefault("recommendation_line", None)
     return CaseAnalysisResponse(**analysis)
+
+
+@app.get("/analysis/history-insight/{case_id}", response_model=HistoryInsightResponse)
+async def get_history_insight(case_id: str, user: dict = Depends(require_user)):
+    case_row = auth_db.get_case(int(user["id"]), case_id)
+    if case_row is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    history = auth_db.list_patient_analysis_history(
+        int(user["id"]),
+        case_row["fname"],
+        case_row["lname"],
+        exclude_case_pk=case_row["id"],
+    )
+
+    oldest = history[:2]
+    newest = history[-2:] if len(history) > 2 else []
+
+    selected_reports: list[dict] = []
+    selected_case_ids: set[int] = set()
+    for item in oldest + newest:
+        case_pk = int(item["case_pk"])
+        if case_pk in selected_case_ids:
+            continue
+        selected_case_ids.add(case_pk)
+        selected_reports.append(item)
+
+    insight_text, source = _generate_history_insight_with_gemini(
+        f"{case_row['fname']} {case_row['lname']}",
+        selected_reports,
+    )
+
+    return HistoryInsightResponse(
+        case_id=case_row["case_id"],
+        patient_name=f"{case_row['fname']} {case_row['lname']}",
+        selected_oldest_reports=[HistoryReportSummary(**item) for item in oldest],
+        selected_newest_reports=[HistoryReportSummary(**item) for item in newest],
+        insight=insight_text,
+        source=source,
+    )
 
 
 @app.post("/chat", response_model=ChatResponse)

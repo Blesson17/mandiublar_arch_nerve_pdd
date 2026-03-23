@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - ImplantAI</title>
+    <meta name="description" content="Sign in to ImplantAI - AI-Powered Dental Implant Planning">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Use the CSS version for better reliability with standard class names -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Splash Screen -->
+    <div class="splash-screen" id="splashScreen">
+        <div class="splash-content">
+            <div class="splash-logo">
+                <i class="ph-fill ph-tooth"></i>
+            </div>
+            <div class="splash-title">ImplantAI</div>
+            <div class="splash-subtitle">Loading...</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Left Side: Brand & Features -->
+        <div class="brand-section">
+            <div class="brand-content">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <i class="ph-fill ph-wave-sine"></i>
+                    </div>
+                    <span>ImplantAI</span>
+                </div>
+
+                <div class="hero-text">
+                    <h1>AI-Powered Dental Implant Planning</h1>
+                    <p>Transform your implant workflow with intelligent CBCT analysis, automated measurements, and
+                        AI-driven treatment planning.</p>
+                </div>
+
+                <div class="feature-cards">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="ph-fill ph-cpu"></i>
+                        </div>
+                        <div class="feature-info">
+                            <h3>Automated Analysis</h3>
+                            <p>AI-powered segmentation and measurements</p>
+                        </div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="ph-fill ph-device-mobile"></i>
+                        </div>
+                        <div class="feature-info">
+                            <h3>Smart Recommendations</h3>
+                            <p>Size and placement recommendations</p>
+                        </div>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="ph-fill ph-shield-check"></i>
+                        </div>
+                        <div class="feature-info">
+                            <h3>HIPAA Compliant</h3>
+                            <p>Enterprise-grade security and encryption</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Background Decorative Elements -->
+            <div class="circle-decoration"></div>
+            <div class="wave-decoration"></div>
+        </div>
+
+        <!-- Right Side: Login Form -->
+        <div class="login-section">
+            <div class="login-container">
+
+
+                <!-- Sign In Form -->
+                <div class="auth-card" id="signin-card">
+                    <div class="auth-header">
+                        <h2>Welcome back</h2>
+                        <p>Sign in to access your cases and continue planning</p>
+                    </div>
+
+                    <form class="auth-form" onsubmit="event.preventDefault();">
+                        <div class="input-group">
+                            <label for="signin-email">Email or Phone</label>
+                            <input type="text" id="signin-email" placeholder="Email or 10-digit Phone" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="signin-password">Password</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="signin-password" placeholder="Min 8 chars + Special Symbol"
+                                    required>
+                                <button type="button" class="eye-btn" onclick="togglePassword('signin-password', this)">
+                                    <i class="ph ph-eye"></i>
+                                </button>
+                            </div>
+                            <p class="helper-text" style="font-size: 0.75rem; color: #64748B; margin-top: 0.25rem;">
+                                Must be 8+ characters with at least one special symbol (!@#$%)
+                            </p>
+                        </div>
+
+                        <div class="form-actions">
+                            <label class="remember-me">
+                                <input type="checkbox">
+                                <span class="checkmark"></span>
+                                Remember me
+                            </label>
+                            <a href="reset-password.html" class="forgot-pass">Forgot password?</a>
+                        </div>
+
+                        <button type="submit" class="submit-btn">
+                            Sign In
+                            <i class="ph-bold ph-arrow-right"></i>
+                        </button>
+
+                        <div style="text-align: center; margin-top: 1.5rem; font-size: 0.9rem;">
+                            <span style="color: var(--text-secondary);">New here? </span>
+                            <a href="#" onclick="toggleAuth('signup'); return false;"
+                                style="color: var(--primary-blue); font-weight: 600; text-decoration: none;">Create an
+                                account</a>
+                        </div>
+                    </form>
+
+                    <div class="divider">
+                        <span>or continue with</span>
+                    </div>
+
+                    <button class="google-btn">
+                        <img src="https://www.google.com/favicon.ico" alt="Google">
+                        Continue with Google
+                    </button>
+                </div>
+
+                <!-- Create Account Form (Hidden by default) -->
+                <div class="auth-card" id="signup-card" style="display: none;">
+                    <div class="auth-header" style="margin-bottom: 1.5rem;">
+                        <h2>Create your account</h2>
+                        <p>Start your 14-day free trial today</p>
+                    </div>
+
+                    <form class="auth-form" onsubmit="event.preventDefault(); handleRegister(event);">
+                        <div class="input-group">
+                            <label for="fullname">Full Name</label>
+                            <input type="text" id="fullname" placeholder="Dr. Sarah Wilson" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="signup-email">Email Address</label>
+                            <input type="email" id="signup-email" placeholder="dr.wilson@clinic.com" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="signup-phone">Phone Number</label>
+                            <input type="tel" id="signup-phone" placeholder="9876543210" required pattern="[0-9]{10}"
+                                title="10 digit mobile number">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="practice">Practice / Clinic Name <span
+                                    style="font-weight: 400; color: var(--text-light);">(optional)</span></label>
+                            <input type="text" id="practice" placeholder="Wilson Dental Care">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="signup-password">Password</label>
+                            <div class="password-wrapper">
+                                <input type="password" id="signup-password" placeholder="Min. 8 chars + symbol"
+                                    required>
+                                <button type="button" class="eye-btn" onclick="togglePassword('signup-password', this)">
+                                    <i class="ph ph-eye"></i>
+                                </button>
+                            </div>
+                            <p class="helper-text" style="font-size: 0.75rem; color: #64748B; margin-top: 0.25rem;">
+                                Must be 8+ chars with at least one special symbol (!@#$%)
+                            </p>
+                        </div>
+
+                        <div class="form-actions" style="margin-bottom: 1rem; justify-content: flex-start;">
+                            <label class="remember-me">
+                                <input type="checkbox" required>
+                                <span class="checkmark"></span>
+                                <span style="font-size: 0.8rem;">I agree to the <a href="#"
+                                        style="color: var(--primary-blue); text-decoration: none;">Terms of Service</a>
+                                    and <a href="#" style="color: var(--primary-blue); text-decoration: none;">Privacy
+                                        Policy</a></span>
+                            </label>
+                        </div>
+
+                        <button type="submit" class="submit-btn" onclick="handleRegister(event)">
+                            Create Account
+                            <i class="ph-bold ph-arrow-right"></i>
+                        </button>
+
+                        <div style="text-align: center; margin-top: 1.5rem; font-size: 0.9rem;">
+                            <span style="color: var(--text-secondary);">Already have an account? </span>
+                            <a href="#" onclick="toggleAuth('signin'); return false;"
+                                style="color: var(--primary-blue); font-weight: 600; text-decoration: none;">Sign In</a>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="security-note">
+                    <i class="ph-fill ph-shield-check"></i>
+                    <div>
+                        <p>Protected by HIPAA compliant encryption</p>
+                        <p class="sub-note" style="font-size: 0.7rem; color: #9CA3AF;">Your data is secure and never
+                            shared.</p>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                // Unified Backend: API is at root relative path
+                const API_URL = '/';
+
+                // Splash Screen Logic
+                window.addEventListener('load', () => {
+                    setTimeout(() => {
+                        const splash = document.getElementById('splashScreen');
+                        splash.classList.add('hidden');
+                        setTimeout(() => splash.remove(), 500);
+                    }, 1200); // 1.2s delay
+                });
+
+                function toggleAuth(mode) {
+                    const signinCard = document.getElementById('signin-card');
+                    const signupCard = document.getElementById('signup-card');
+
+                    if (mode === 'signin') {
+                        signinCard.style.display = 'block';
+                        signupCard.style.display = 'none';
+                    } else {
+                        signupCard.style.display = 'block';
+                        signinCard.style.display = 'none';
+                    }
+                }
+
+                function togglePassword(inputId, btn) {
+                    const input = document.getElementById(inputId);
+                    const icon = btn.querySelector('i');
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        icon.classList.replace('ph-eye', 'ph-eye-slash');
+                    } else {
+                        input.type = 'password';
+                        icon.classList.replace('ph-eye-slash', 'ph-eye');
+                    }
+                }
+
+                // Sign In Handler
+                document.querySelector('#signin-card .auth-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const identifier = document.getElementById('signin-email').value;
+                    const pass = document.getElementById('signin-password').value;
+
+                    // Determine if Phone or Email
+                    const isPhone = /^\d{10}$/.test(identifier);
+                    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+
+                    if (!isPhone && !isEmail) {
+                        alert("Please enter a valid Email Address or a 10-digit Phone Number.");
+                        return;
+                    }
+
+
+
+                    try {
+                        const res = await fetch(API_URL + 'login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: identifier, password: pass })
+                        });
+                        const data = await res.json();
+
+                        if (res.ok) {
+                            localStorage.setItem('implantAI_token', data.token);
+                            localStorage.setItem('implantAI_userName', data.user.name);
+                            localStorage.setItem('implantAI_userRole', 'Dentist');
+                            window.location.href = 'dashboard.html';
+                        } else {
+                            alert(data.detail || data.error || "Login Failed");
+                        }
+                    } catch (err) {
+                        alert("Network Error. Please ensure the backend processing server is running on port 8000.");
+                    }
+                });
+
+                // Sign Up Handler (Existing)
+                async function handleRegister(e) {
+                    e.preventDefault();
+
+                    const name = document.getElementById('fullname').value;
+                    const email = document.getElementById('signup-email').value;
+                    const phone = document.getElementById('signup-phone').value;
+                    const practice = document.getElementById('practice').value;
+                    const password = document.getElementById('signup-password').value;
+
+                    // Validation
+                    if (!/^\d{10}$/.test(phone)) {
+                        alert("Phone number must be strictly 10 digits.");
+                        return;
+                    }
+
+                    // Relaxed Validation
+                    if (password.length < 1) {
+                        alert("Please enter a password.");
+                        return;
+                    }
+
+                    try {
+                        const res = await fetch(API_URL + 'register', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name, email, phone, practice, password })
+                        });
+
+                        const data = await res.json();
+
+                        if (res.ok) {
+                            // Store token and redirect
+                            localStorage.setItem('implantAI_token', data.token);
+                            localStorage.setItem('implantAI_userName', data.user.name);
+                            localStorage.setItem('implantAI_userRole', 'Dentist');
+                            localStorage.setItem('implantAI_userInitials', data.user.name.substring(0, 2).toUpperCase());
+
+                            window.location.href = 'dashboard.html';
+                        } else {
+                            alert("Registration Failed: " + (data.detail || data.error || 'Unknown error'));
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert("Network Error");
+                    }
+                }
+
+                // Sign In Handler attached above at line 240 covers this. Removed duplicate.
+            </script>
+        </div>
+    </div>
+</body>
+
+</html>

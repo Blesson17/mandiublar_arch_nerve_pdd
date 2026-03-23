@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrations - ImplantAI</title>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="delete-account-modal.css">
+    <link rel="stylesheet" href="settings.css">
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="logo-area">
+            <div class="logo-box"><i class="ph-bold ph-wave-sine"></i></div><span class="logo-text">ImplantAI</span>
+        </div>
+        <nav class="nav-menu">
+            <a href="dashboard.html" class="nav-item"><i class="ph ph-squares-four"></i> Dashboard</a>
+            <a href="upload.html" class="nav-item"><i class="ph ph-upload-simple"></i> Upload</a>
+            <a href="#" class="nav-item"><i class="ph ph-heartbeat"></i> Analysis</a>
+            <a href="#" class="nav-item"><i class="ph ph-file-text"></i> Reports</a>
+            <a href="settings.html" class="nav-item active"><i class="ph ph-gear"></i> Settings</a>
+        </nav>
+        <div>
+            <div class="user-profile">
+                <div class="avatar-circle">SW</div>
+                <div class="profile-info">
+                    <h4>Dr. Sarah Wilson</h4>
+                    <p>Oral Surgeon</p>
+                </div>
+            </div>
+            <a href="index.html" class="sign-out"><i class="ph ph-sign-out"></i> Sign Out</a>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1>Integrations</h1>
+        </div>
+        <div class="settings-container">
+            <div class="settings-sidebar">
+                <div>
+                    <div class="settings-group-title">Account</div>
+                    <a href="my-profile.html" class="settings-nav-item"><i class="ph ph-user"></i> My Profile</a>
+                    <a href="settings.html" class="settings-nav-item"><i class="ph ph-hard-drive"></i> Account
+                        Settings</a>
+                    <a href="settings-notifications.html" class="settings-nav-item"><i class="ph ph-bell"></i>
+                        Notifications</a>
+                    <a href="settings-privacy.html" class="settings-nav-item"><i class="ph ph-shield-check"></i> Privacy
+                        & Security</a>
+                </div>
+                <div>
+                    <div class="settings-group-title">Workspace</div>
+                    <a href="settings-team.html" class="settings-nav-item"><i class="ph ph-users"></i> Team Members</a>
+                    <a href="settings-integrations.html" class="settings-nav-item active"><i class="ph ph-plugs"></i>
+                        Integrations</a>
+                    <a href="settings-billing.html" class="settings-nav-item"><i class="ph ph-credit-card"></i> Billing
+                        & Plans</a>
+                </div>
+                <div>
+                    <div class="settings-group-title">Preferences</div>
+                    <a href="settings-appearance.html" class="settings-nav-item"><i class="ph ph-palette"></i>
+                        Appearance</a>
+                    <a href="settings-language.html" class="settings-nav-item"><i class="ph ph-globe"></i> Language &
+                        Region</a>
+                </div>
+                <div>
+                    <div class="settings-group-title">Support</div>
+                    <a href="settings-help.html" class="settings-nav-item"><i class="ph ph-question"></i> Help &
+                        Support</a>
+                    <a href="settings-about.html" class="settings-nav-item"><i class="ph ph-info"></i> About</a>
+                </div>
+                <div>
+                    <div class="settings-group-title">Danger Zone</div>
+                    <a href="#" class="settings-nav-item delete-account"><i class="ph ph-trash"></i> Delete Account</a>
+                </div>
+            </div>
+
+            <div class="settings-content">
+                <div class="settings-card">
+                    <h3 class="card-title">Connected Services</h3>
+                    <div class="connect-row">
+                        <div class="service-info">
+                            <div class="service-icon icon-db"><i class="ph-fill ph-database"></i></div>
+                            <div class="service-dets">
+                                <h4>Practice Management System</h4>
+                                <p>Dentrix, Open Dental, Eaglesoft</p>
+                            </div>
+                        </div>
+                        <span class="status-pill status-connected">Connected</span>
+                    </div>
+                    <div class="connect-row">
+                        <div class="service-info">
+                            <div class="service-icon icon-scan"><i class="ph-bold ph-lightning-slate"></i></div>
+                            <div class="service-dets">
+                                <h4>CBCT Scanner</h4>
+                                <p>Carestream, Planmeca, Sirona</p>
+                            </div>
+                        </div>
+                        <span class="status-pill status-connected">Connected</span>
+                    </div>
+                    <div class="connect-row">
+                        <div class="service-info">
+                            <div class="service-icon icon-cad"><i class="ph-bold ph-link"></i></div>
+                            <div class="service-dets">
+                                <h4>CAD/CAM System</h4>
+                                <p>3Shape, exocad, CEREC</p>
+                            </div>
+                        </div>
+                        <span class="connect-link">Connect</span>
+                    </div>
+                    <div class="connect-row">
+                        <div class="service-info">
+                            <div class="service-icon icon-mail"><i class="ph-fill ph-envelope-simple"></i></div>
+                            <div class="service-dets">
+                                <h4>Email Provider</h4>
+                                <p>Gmail, Outlook, Custom SMTP</p>
+                            </div>
+                        </div>
+                        <span class="connect-link">Connect</span>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <h3 class="card-title">API Access</h3>
+                    <div class="api-key-box">
+                        <span style="font-size: 0.8rem; font-weight: 600; color: #94A3B8;">API Key</span>
+                        <div class="key-row">
+                            <input type="text" class="key-input" value="sk_live_••••••••••••••••••••••••" readonly>
+                            <button class="key-action-btn">Copy</button>
+                            <button class="key-action-btn">Regenerate</button>
+                        </div>
+                        <p style="font-size: 0.8rem; color: #94A3B8; margin-top: 1rem; line-height: 1.5;">Use this API
+                            key to integrate ImplantAI with your custom applications. Keep it secure and never share it
+                            publicly.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                // Check for buttons to avoid errors if elements don't exist
+                const connectLinks = document.querySelectorAll('.connect-link');
+                const keyActionBtns = document.querySelectorAll('.key-action-btn');
+
+                // Handle Connect/Disconnect toggling
+                connectLinks.forEach(link => {
+                    link.addEventListener('click', function () {
+                        if (this.classList.contains('status-pill')) {
+                            // Disconnect logic
+                            const parent = this.parentElement;
+                            const newBtn = document.createElement('span');
+                            newBtn.className = 'connect-link';
+                            newBtn.innerText = 'Connect';
+                            parent.replaceChild(newBtn, this);
+                            // Re-attach event listener to new element (recursive/delegation would be better but this works for simple case)
+                            newBtn.addEventListener('click', arguments.callee);
+                        } else {
+                            // Connect logic
+                            // Simulate loading or just toggle
+                            this.innerText = 'Connecting...';
+                            setTimeout(() => {
+                                const parent = this.parentElement;
+                                const newPill = document.createElement('span');
+                                newPill.className = 'status-pill status-connected';
+                                newPill.innerText = 'Connected';
+                                parent.replaceChild(newPill, this);
+                                // We don't attach listener to connected pill usually unless we want disconnect, 
+                                // but let's assume one-way for now or make it a specific disconnect button
+                            }, 800);
+                        }
+                    });
+                });
+
+                // Handle API Key Buttons
+                keyActionBtns.forEach(btn => {
+                    btn.addEventListener('click', function () {
+                        const text = this.innerText;
+                        if (text === 'Copy') {
+                            const input = this.parentElement.querySelector('input');
+                            input.select();
+                            navigator.clipboard.writeText(input.value).then(() => {
+                                const originalText = this.innerText;
+                                this.innerText = 'Copied!';
+                                setTimeout(() => {
+                                    this.innerText = originalText;
+                                }, 2000);
+                            });
+                        } else if (text === 'Regenerate') {
+                            if (confirm('Are you sure you want to regenerate your API key? The old one will stop working.')) {
+                                // Generate fake key
+                                const input = this.parentElement.querySelector('input');
+                                input.value = 'sk_live_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                                alert('New API key generated.');
+                            }
+                        }
+                    });
+                });
+            });
+        </script>
+        <script src="theme-manager.js"></script>
+        <script src="delete-account-modal.js"></script>
+</body>
+
+</html>

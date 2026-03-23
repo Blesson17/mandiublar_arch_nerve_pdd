@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload - ImplantAI</title>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="theme-manager.js"></script>
+    <style>
+        body {
+            background-color: #F8FAFC;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Reusing Sidebar Styles from Dashboard (ideally centralized in styles.css) */
+        .sidebar {
+            width: 260px;
+            background: #FFFFFF;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            border-right: 1px solid #E2E8F0;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 3rem;
+            padding-left: 0.5rem;
+        }
+
+        .logo-box {
+            width: 32px;
+            height: 32px;
+            background-color: #2563EB;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1E293B;
+            letter-spacing: -0.02em;
+        }
+
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex-grow: 1;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: #64748B;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover {
+            background-color: #F1F5F9;
+            color: #334155;
+        }
+
+        .nav-item.active {
+            background-color: #EFF6FF;
+            color: #2563EB;
+        }
+
+        .nav-item i {
+            font-size: 1.25rem;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 0.5rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+
+        .avatar-circle {
+            width: 40px;
+            height: 40px;
+            background-color: #2563EB;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .profile-info h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #334155;
+            margin: 0;
+        }
+
+        .profile-info p {
+            font-size: 0.75rem;
+            color: #94A3B8;
+            margin: 0;
+        }
+
+        .sign-out {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: #94A3B8;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+
+        /* Main Content Styles */
+        .main-content {
+            flex: 1;
+            padding: 2rem 3rem;
+            overflow-y: auto;
+        }
+
+        .page-header {
+            margin-bottom: 3rem;
+        }
+
+        .page-header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1E293B;
+        }
+
+        /* Upload Specific Styles */
+        .upload-container {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 2rem;
+            height: 400px;
+        }
+
+        .upload-card {
+            flex: 1;
+            background: white;
+            border: 2px dashed #E2E8F0;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .upload-card:hover {
+            border-color: #2563EB;
+            background: #F8FAFC;
+        }
+
+        .card-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin-bottom: 1.5rem;
+        }
+
+        .icon-blue {
+            background: #EFF6FF;
+            color: #2563EB;
+        }
+
+        .icon-green {
+            background: #ECFDF5;
+            color: #10B981;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: #64748B;
+            text-align: center;
+            max-width: 250px;
+            line-height: 1.5;
+            margin-bottom: 2rem;
+        }
+
+        .card-btn {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #334155;
+        }
+
+        .upload-card:hover .card-btn {
+            color: #2563EB;
+        }
+
+        .supported-text {
+            color: #94A3B8;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.9;
+        }
+
+        /* Post Upload Styles - Refined Alignment */
+        .post-upload-container {
+            max-width: 900px;
+            margin: 0 auto;
+            animation: fadeIn 0.3s ease-out;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            /* Clear separation between cards */
+        }
+
+        .content-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2.5rem;
+            /* Increased padding */
+            border: 1px solid #E2E8F0;
+            /* removed margin-bottom as container gap handles it */
+        }
+
+        .card-heading {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 0.5rem;
+        }
+
+        .section-desc {
+            color: #64748B;
+            font-size: 0.9rem;
+            margin-bottom: 2.5rem;
+            /* More breathing room */
+        }
+
+        /* File Preview - Exact Match */
+        .file-preview-row {
+            display: flex;
+            gap: 2.5rem;
+            align-items: flex-start;
+        }
+
+        .file-thumbnail {
+            width: 180px;
+            /* Larger thumbnail */
+            height: 140px;
+            background: #F8FAFC;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #E2E8F0;
+            flex-shrink: 0;
+        }
+
+        .file-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .file-details {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+            padding-top: 0.5rem;
+        }
+
+        .detail-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .detail-label {
+            font-size: 0.8rem;
+            color: #94A3B8;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .detail-value {
+            font-size: 1.05rem;
+            font-weight: 500;
+            color: #334155;
+        }
+
+        .remove-link {
+            color: #64748B;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 0.5rem;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+
+        .remove-link:hover {
+            color: #EF4444;
+        }
+
+        /* Form Layout - Grid Alignment */
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            column-gap: 3rem;
+            /* Wider gap between columns */
+            row-gap: 2.5rem;
+            /* Wider gap between rows */
+            margin-bottom: 2.5rem;
+        }
+
+        .input-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 0.75rem;
+        }
+
+        .styled-select,
+        .styled-input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            /* Taller inputs */
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            color: #1E293B;
+            background: white;
+            transition: border-color 0.15s;
+        }
+
+        .styled-select:hover,
+        .styled-input:hover {
+            border-color: #CBD5E1;
+        }
+
+        .toggle-group {
+            display: flex;
+            background: #FFFFFF;
+            /* border: 1px solid #E2E8F0; Removed outer border for cleaner look if buttons have borders, or keep */
+            gap: 1rem;
+            /* Separate buttons */
+        }
+
+        .toggle-btn {
+            flex: 1;
+            padding: 0.875rem 1rem;
+            border: 1px solid #E2E8F0;
+            background: white;
+            color: #64748B;
+            font-weight: 500;
+            font-size: 0.9rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .toggle-btn.active {
+            background: #EFF6FF;
+            /* very light blue */
+            color: #2563EB;
+            border-color: #3B82F6;
+            font-weight: 600;
+            /* No shadow, clean border */
+        }
+
+        /* Info Box - Light Blue */
+        .info-box {
+            background: #EFF6FF;
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            gap: 1rem;
+            border: none;
+            /* Removed border for cleaner look */
+            align-items: flex-start;
+        }
+
+        .info-icon {
+            color: #2563EB;
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .info-content h4 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1E40AF;
+            margin-bottom: 0.5rem;
+        }
+
+        .info-content p {
+            font-size: 0.9rem;
+            color: #3B82F6;
+            line-height: 1.6;
+        }
+
+        /* Form Actions - Right Aligned */
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1.5rem;
+            margin-top: 3rem;
+            align-items: center;
+        }
+
+        .btn-cancel {
+            background: transparent;
+            border: none;
+            color: #64748B;
+            font-weight: 500;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: #0066CC;
+            /* Exact design blue */
+            color: white;
+            border: none;
+            padding: 0.875rem 2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            box-shadow: none;
+            /* Flat design */
+        }
+
+        .btn-primary:hover {
+            background: #0052A3;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <div class="logo-box">
+                <i class="ph-bold ph-wave-sine"></i>
+            </div>
+            <span class="logo-text">ImplantAI</span>
+        </div>
+
+        <nav class="nav-menu">
+            <a href="dashboard.html" class="nav-item">
+                <i class="ph ph-squares-four"></i>
+                Dashboard
+            </a>
+            <a href="#" class="nav-item active">
+                <i class="ph ph-upload-simple"></i>
+                Upload
+            </a>
+            <a href="#" class="nav-item">
+                <i class="ph ph-heartbeat"></i>
+                Analysis
+            </a>
+            <a href="#" class="nav-item">
+                <i class="ph ph-file-text"></i>
+                Reports
+            </a>
+            <a href="#" class="nav-item">
+                <i class="ph ph-gear"></i>
+                Settings
+            </a>
+        </nav>
+
+        <div>
+            <div class="user-profile">
+                <div class="avatar-circle">SW</div>
+                <div class="profile-info">
+                    <h4>Dr. Sarah Wilson</h4>
+                    <p>Oral Surgeon</p>
+                </div>
+                <i class="ph ph-caret-right" style="margin-left: auto; color: #94A3B8;"></i>
+            </div>
+            <a href="index.html" class="sign-out">
+                <i class="ph ph-sign-out"></i>
+                Sign Out
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="page-header">
+            <h1>Upload CBCT Slice</h1>
+        </div>
+
+        <div class="upload-container" id="initialUpload">
+            <!-- Folder Option -->
+            <div class="upload-card" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-card" style="border:none;">
+                    <div class="card-icon icon-blue">
+                        <i class="ph ph-folder-open"></i>
+                    </div>
+                    <h3 class="card-title">Upload 3D CBCT Slice</h3>
+                    <div class="upload-dropzone" id="dropzone">
+                        <input type="file" id="fileInput" hidden multiple accept=".dcm,.zip,.rar,.stl,.obj">
+                        <div class="upload-icon">
+                            <i class="ph-fill ph-files"></i>
+                        </div>
+                        <h3>Drag & Drop 3D CBCT / 3D Image Files</h3>
+                        <p>Supported: DICOM (.dcm), Archive (.zip), 3D Model (.stl, .obj)</p>
+                        <button class="select-btn"
+                            onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
+                            Select Files
+                        </button>
+                        <p class="helper-text" style="font-size: 0.85rem; color: #64748B; margin-top: 1rem;">
+                            Upload 3D datasets for AI-assisted implant analysis
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="supported-text" id="supportedText">
+                <span class="supported-item">
+                    <i class="ph-fill ph-file-dashed"></i> Supported:
+                </span>
+                <span>.dcm (DICOM)</span>
+                <span>.zip (Archive)</span>
+                <span>.stl / .obj (3D)</span>
+            </div>
+
+            <!-- Post Upload Configuration (Hidden by default) -->
+            <div class="post-upload-container" id="postUpload" style="display: none;">
+
+                <!-- Selected File Card -->
+                <div class="content-card mb-2">
+                    <h3 class="card-heading">Selected File</h3>
+                    <div class="file-preview-row">
+                        <div class="file-thumbnail">
+                            <!-- Placeholder X-Ray/CBCT Image -->
+                            <img src="https://prod-images-static.radiopaedia.org/images/1305438/5820f4838618417596041113654518_jumbo.jpeg"
+                                alt="CBCT Slice" style="width: 100%; height: 100%; object-fit: cover; opacity: 0.8;">
+                        </div>
+                        <div class="file-details">
+                            <div class="detail-group">
+                                <span class="detail-label">File Name</span>
+                                <span class="detail-value" id="fileNameDisplay">cbct_slice_001.jpg</span>
+                            </div>
+                            <div class="detail-group">
+                                <span class="detail-label">File Size</span>
+                                <span class="detail-value" id="fileSizeDisplay">2.4 MB</span>
+                            </div>
+                            <div class="detail-group">
+                                <span class="detail-label">File Type</span>
+                                <span class="detail-value" id="fileTypeDisplay">image/jpeg</span>
+                            </div>
+                            <span class="remove-link" onclick="resetUpload()">Remove File</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuration Options -->
+                <div class="content-card">
+                    <h3 class="card-heading">Implant Planning Options</h3>
+                    <p class="section-desc">Configure these settings to help AI interpret the slice correctly</p>
+
+                    <!-- Patient Selection (User Requested) -->
+                    <div class="form-section">
+                        <label class="input-label">Select Patient Case</label>
+                        <div class="select-wrapper">
+                            <select class="styled-select" id="patientSelect" style="width: 100%;">
+                                <option value="">Loading cases...</option>
+                            </select>
+                            <i class="ph-bold ph-caret-down select-arrow"></i>
+                        </div>
+                    </div>
+
+                    <div class="options-grid">
+                        <!-- Tooth Region -->
+                        <div class="option-group">
+                            <label class="input-label">Tooth Region <span style="color: #EF4444;">*</span></label>
+                            <div class="select-wrapper">
+                                <select class="styled-select" id="toothRegion">
+                                    <option value="27">27 - Upper Left Second Molar</option>
+                                    <option value="19">19 - Lower Left First Molar</option>
+                                    <option value="30">30 - Lower Right First Molar</option>
+                                    <option value="Global">Full Arch Analysis</option>
+                                </select>
+                                <i class="ph-bold ph-caret-down select-arrow"></i>
+                            </div>
+                        </div>
+
+                        <!-- Jaw Selection -->
+                        <div class="option-group">
+                            <label class="input-label">Jaw Selection <span style="color: #EF4444;">*</span></label>
+                            <div class="toggle-group">
+                                <button class="toggle-btn">Maxilla (Upper)</button>
+                                <button class="toggle-btn active">Mandible (Lower)</button>
+                            </div>
+                        </div>
+
+                        <!-- Slice Orientation -->
+                        <div class="option-group">
+                            <label class="input-label">Slice Orientation <span style="color: #EF4444;">*</span></label>
+                            <div class="toggle-group">
+                                <button class="toggle-btn">Axial</button>
+                                <button class="toggle-btn active">Cross-sectional</button>
+                            </div>
+                        </div>
+
+                        <!-- Pixel Spacing -->
+                        <div class="option-group">
+                            <label class="input-label">Pixel Spacing (mm/pixel)</label>
+                            <div class="input-wrapper">
+                                <input type="text" class="styled-input" value="0.15">
+                                <span class="input-suffix">Auto-detect</span>
+                            </div>
+                            <p class="helper-text">Optional: Auto-read from DICOM or enter manually</p>
+                        </div>
+                    </div>
+
+                    <!-- Info Box -->
+                    <div class="info-box">
+                        <i class="ph-fill ph-info info-icon"></i>
+                        <div class="info-content">
+                            <h4>Why these settings matter</h4>
+                            <p>These parameters help the AI correctly interpret your 3D CBCT slice for accurate bone
+                                segmentation and implant planning. Proper configuration ensures reliable measurements.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Footer Actions -->
+                    <div class="form-actions">
+                        <button class="action-btn btn-cancel" onclick="resetUpload()">Cancel</button>
+                        <button class="action-btn btn-primary" id="uploadBtn" onclick="performUpload()">
+                            Upload & Analyze
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+    </main>
+
+    <script>
+        const API_URL = '/';
+        const token = localStorage.getItem('implantAI_token');
+        if (!token) window.location.href = 'index.html';
+
+        // Load Patients
+        document.addEventListener('DOMContentLoaded', async () => {
+            const select = document.getElementById('patientSelect');
+            try {
+                const res = await fetch(API_URL + 'cases', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const cases = await res.json();
+                if (Array.isArray(cases)) {
+                    select.innerHTML = '<option value="">Select a Case...</option>';
+                    cases.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.id; // Case ID String
+                        opt.text = `${c.fname} ${c.lname} (${c.id})`;
+                        select.appendChild(opt);
+                    });
+
+                    // Pre-select via URL param if present
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const caseId = urlParams.get('caseId');
+                    if (caseId) select.value = caseId;
+                }
+            } catch (e) { console.error(e); select.innerHTML = '<option>Error loading cases</option>'; }
+        });
+
+        let selectedFile = null;
+
+        function handleFileSelect(input) {
+            if (input.files && input.files[0]) {
+                selectedFile = input.files[0];
+                const file = selectedFile;
+
+                document.getElementById('fileNameDisplay').innerText = file.name;
+                document.getElementById('fileSizeDisplay').innerText = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                document.getElementById('fileTypeDisplay').innerText = file.type || 'Unknown';
+
+                const previewContainer = document.querySelector('.file-thumbnail');
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        previewContainer.innerHTML = `<img src="${e.target.result}" style="width: 100%; height: 100%; object-fit: cover;">`;
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    previewContainer.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#64748B;"><i class="ph ph-file-text" style="font-size:3rem;"></i></div>`;
+                }
+
+                document.getElementById('initialUpload').style.display = 'none';
+                document.getElementById('supportedText').style.display = 'none';
+                document.getElementById('postUpload').style.display = 'flex';
+            }
+        }
+
+        async function performUpload() {
+            const caseId = document.getElementById('patientSelect').value;
+            if (!caseId || !selectedFile) {
+                alert("Please select a case and a file.");
+                return;
+            }
+
+            const btn = document.getElementById('uploadBtn');
+            const originalText = btn.innerText;
+            btn.innerText = "Uploading...";
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            try {
+                // 1. Upload
+                const upRes = await fetch(`${API_URL}cases/${caseId}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!upRes.ok) throw new Error("Upload failed");
+
+                // 2. Analyze (Optional trigger, mainly status update)
+                btn.innerText = "Analyzing...";
+                // const anaRes = await fetch(`${API_URL}cases/${caseId}/analyze`, { method: 'POST' });
+
+                // 3. Redirect to Analysis Page
+                window.location.href = `analysis.html?id=${caseId}`;
+
+            } catch (e) {
+                console.error(e);
+                alert("Error during process: " + e.message);
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function resetUpload() {
+            document.getElementById('initialUpload').style.display = 'flex';
+            document.getElementById('supportedText').style.display = 'flex';
+            document.getElementById('postUpload').style.display = 'none';
+            document.getElementById('fileInput').value = '';
+            selectedFile = null;
+        }
+
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                this.parentElement.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+    </script>
+</body>
+
+</html>

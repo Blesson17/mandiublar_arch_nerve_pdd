@@ -6,6 +6,7 @@ numpy==2.2.1
 scipy
 scikit-image==0.25.0
 python-multipart==0.0.20
+google-generativeai>=0.8.0
 
 pylibjpeg
 pylibjpeg-libjpeg

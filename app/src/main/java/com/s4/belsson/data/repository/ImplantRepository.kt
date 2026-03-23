@@ -133,6 +133,33 @@ class ImplantRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
+    /**
+     * Upload both CBCT and panoramic files to a backend case without running analysis.
+     */
+    fun uploadFilesOnly(
+        caseId: String,
+        cbctUri: Uri,
+        panoramicUri: Uri,
+    ): Flow<Result<Unit>> = flow {
+        try {
+            val cbctBytes = context.contentResolver.openInputStream(cbctUri)?.use { it.readBytes() }
+                ?: throw IllegalArgumentException("Cannot open CBCT URI: $cbctUri")
+            val panoBytes = context.contentResolver.openInputStream(panoramicUri)?.use { it.readBytes() }
+                ?: throw IllegalArgumentException("Cannot open panoramic URI: $panoramicUri")
+
+            val cbctName = resolveFileName(cbctUri, UploadWorkflow.CBCT_IMPLANT)
+            val panoName = resolveFileName(panoramicUri, UploadWorkflow.PANORAMIC_MANDIBULAR_CANAL)
+
+            ImplantApiService.uploadCaseFile(caseId, cbctBytes, cbctName)
+            ImplantApiService.uploadCaseFile(caseId, panoBytes, panoName)
+            ImplantApiService.updateCaseStatus(caseId, "Ready")
+
+            emit(Result.success(Unit))
+        } catch (e: Exception) {
+            emit(Result.failure(e))
+        }
+    }.flowOn(Dispatchers.IO)
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**

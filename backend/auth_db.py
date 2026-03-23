@@ -641,6 +641,29 @@ class AuthDatabase:
             "uploaded_at": uploaded_at,
         }
 
+    def list_case_files(self, case_pk: int) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, case_id, filename, file_path, uploaded_at
+                FROM cbct_files
+                WHERE case_id = ?
+                ORDER BY uploaded_at ASC
+                """,
+                (case_pk,),
+            ).fetchall()
+
+        return [
+            {
+                "id": int(row[0]),
+                "case_id": int(row[1]),
+                "filename": row[2],
+                "file_path": row[3],
+                "uploaded_at": row[4],
+            }
+            for row in rows
+        ]
+
     def save_case_analysis(self, case_pk: int, analysis: dict) -> dict:
         created_at = self._utc_now_iso()
         with self._connect() as conn:
@@ -706,6 +729,61 @@ class AuthDatabase:
             "patient_explanation": row[9],
             "created_at": row[10],
         }
+
+    def list_patient_analysis_history(
+        self,
+        user_id: int,
+        fname: str,
+        lname: str,
+        *,
+        exclude_case_pk: int | None = None,
+    ) -> list[dict]:
+        with self._connect() as conn:
+            params: list[object] = [user_id, fname, lname]
+            exclude_clause = ""
+            if exclude_case_pk is not None:
+                exclude_clause = " AND c.id != ?"
+                params.append(exclude_case_pk)
+
+            rows = conn.execute(
+                f"""
+                SELECT a.id, a.case_id, a.arch_curve_data, a.nerve_path_data, a.bone_width_36,
+                       a.bone_height, a.nerve_distance, a.safe_implant_length,
+                       a.clinical_report, a.patient_explanation, a.created_at,
+                      c.case_id, c.status, c.tooth_number, c.case_type
+                FROM analysis_results a
+                JOIN cases c ON c.id = a.case_id
+                WHERE c.user_id = ?
+                  AND c.fname = ?
+                  AND c.lname = ?
+                  {exclude_clause}
+                ORDER BY a.created_at ASC
+                """,
+                tuple(params),
+            ).fetchall()
+
+        history = []
+        for row in rows:
+            history.append(
+                {
+                    "id": int(row[0]),
+                    "case_pk": int(row[1]),
+                    "arch_curve_data": self._json_load(row[2], default=[]),
+                    "nerve_path_data": self._json_load(row[3], default=[]),
+                    "bone_width_36": row[4],
+                    "bone_height": row[5],
+                    "nerve_distance": row[6],
+                    "safe_implant_length": row[7],
+                    "clinical_report": row[8],
+                    "patient_explanation": row[9],
+                    "created_at": row[10],
+                    "case_id": row[11],
+                    "status": row[12],
+                    "tooth_number": row[13],
+                    "case_type": row[14],
+                }
+            )
+        return history
 
     def log_login(self, user_id: int, ip_address: str | None, user_agent: str | None, status_text: str = "Success") -> None:
         with self._connect() as conn:

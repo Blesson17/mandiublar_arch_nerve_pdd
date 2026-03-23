@@ -22,6 +22,8 @@ fun PlanningDashboard(
     viewModel: PlanningViewModel
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val domainState by viewModel.domainState.collectAsStateWithLifecycle()
+    val selectedCaseId by viewModel.selectedCaseId.collectAsStateWithLifecycle()
     val tapMetrics by viewModel.tapMetrics.collectAsStateWithLifecycle()
     val tapOverlay by viewModel.tapOverlay.collectAsStateWithLifecycle()
     val tapSafeZonePath by viewModel.tapSafeZonePath.collectAsStateWithLifecycle()
@@ -36,6 +38,9 @@ fun PlanningDashboard(
     ) {
         UploadScreen(
             uiState = state,
+            cases = domainState.cases,
+            selectedCaseId = selectedCaseId,
+            onSelectedCaseChange = { viewModel.selectCase(it) },
             onProcessRequested = { cbctUri, panoramicUri ->
                 viewModel.uploadBoth(cbctUri, panoramicUri)
             },

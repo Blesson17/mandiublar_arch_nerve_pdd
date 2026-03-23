@@ -95,6 +95,9 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
     private val _domainState = MutableStateFlow(DomainDashboardUiState())
     val domainState: StateFlow<DomainDashboardUiState> = _domainState.asStateFlow()
 
+    private val _selectedCaseId = MutableStateFlow<Long?>(null)
+    val selectedCaseId: StateFlow<Long?> = _selectedCaseId.asStateFlow()
+
     /** Updated when user taps a specific tooth region */
     private val _tapMetrics = MutableStateFlow<BoneMetrics?>(null)
     val tapMetrics: StateFlow<BoneMetrics?> = _tapMetrics.asStateFlow()
@@ -178,6 +181,10 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             domainSyncOrchestrator?.triggerSync()
         }
+    }
+
+    fun selectCase(caseId: Long?) {
+        _selectedCaseId.value = caseId
     }
 
     fun updateProfile(
@@ -277,6 +284,45 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
     // ─────────────────────────────────────────────
     // Upload & Analyze
     // ─────────────────────────────────────────────
+
+    /**
+     * Upload files only to backend for a selected case. Analysis is triggered separately.
+     */
+    fun uploadFilesOnly(cbctUri: Uri, panoramicUri: Uri) {
+        val localCaseId = _selectedCaseId.value
+        val selectedCase = _domainState.value.cases.firstOrNull { it.id == localCaseId }
+        val caseIdentifier = selectedCase?.caseId ?: selectedCase?.remoteId?.toString()
+
+        if (caseIdentifier.isNullOrBlank()) {
+            _uiState.value = PlanningUiState.Error("Select a patient case before uploading files")
+            return
+        }
+
+        _uiState.value = PlanningUiState.Loading
+        _tapMetrics.value = null
+        _tapOverlay.value = null
+        _tapSafeZonePath.value = null
+        _tapRecommendationLine.value = null
+        _tapIanStatusMessage.value = null
+
+        viewModelScope.launch {
+            repository.uploadFilesOnly(
+                caseId = caseIdentifier,
+                cbctUri = cbctUri,
+                panoramicUri = panoramicUri,
+            ).collect { result ->
+                result.fold(
+                    onSuccess = {
+                        _uiState.value = PlanningUiState.Idle
+                        refreshDomainData()
+                    },
+                    onFailure = { err ->
+                        _uiState.value = PlanningUiState.Error(err.message ?: "Upload failed")
+                    }
+                )
+            }
+        }
+    }
 
     /**
      * Process both CBCT and panoramic uploads in parallel.

@@ -24,4 +24,17 @@ interface PatientDao {
 
     @Query("SELECT * FROM patients WHERE remote_patient_id = :remoteId LIMIT 1")
     suspend fun getByRemoteId(remoteId: String): PatientEntity?
+
+    @Query(
+        """
+        SELECT * FROM patients
+        WHERE LOWER(TRIM(first_name)) = LOWER(TRIM(:firstName))
+          AND LOWER(TRIM(last_name)) = LOWER(TRIM(:lastName))
+        LIMIT 1
+        """
+    )
+    suspend fun getByName(firstName: String, lastName: String): PatientEntity?
+
+    @Query("DELETE FROM patients WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

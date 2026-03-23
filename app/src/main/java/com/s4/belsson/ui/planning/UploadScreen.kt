@@ -7,12 +7,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.s4.belsson.data.local.entity.CaseEntity
 
 /**
  * Upload screen – lets the user pick a .dcm DICOM file and upload it.
@@ -20,11 +22,15 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun UploadScreen(
     uiState: PlanningUiState,
+    cases: List<CaseEntity>,
+    selectedCaseId: Long?,
+    onSelectedCaseChange: (Long?) -> Unit,
     onProcessRequested: (Uri, Uri) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var cbctUri by remember { mutableStateOf<Uri?>(null) }
     var panoramicUri by remember { mutableStateOf<Uri?>(null) }
+    var caseMenuExpanded by remember { mutableStateOf(false) }
 
     val cbctLauncher = rememberLauncherForActivityResult(
         contract = OpenDocument()
@@ -42,9 +48,10 @@ fun UploadScreen(
         }
     }
 
-    val canProcess = cbctUri != null && panoramicUri != null
+    val canProcess = cbctUri != null && panoramicUri != null && selectedCaseId != null
 
     val isLoading = uiState is PlanningUiState.Loading
+    val selectedCase = cases.firstOrNull { it.id == selectedCaseId }
 
     Column(
         modifier = modifier
@@ -71,13 +78,62 @@ fun UploadScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Upload your scans and process analysis",
+            text = "Upload your scans to backend",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(20.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text("Select Patient", style = MaterialTheme.typography.titleSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Box {
+                    OutlinedButton(
+                        onClick = { caseMenuExpanded = true },
+                        enabled = !isLoading && cases.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(
+                                text = selectedCase?.let { "${it.fname} ${it.lname} (${it.caseId})" }
+                                    ?: "Select a patient case",
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Choose patient",
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = caseMenuExpanded,
+                        onDismissRequest = { caseMenuExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f),
+                    ) {
+                        if (cases.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("No patient cases available") },
+                                onClick = { caseMenuExpanded = false },
+                            )
+                        } else {
+                            cases.forEach { case ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("${case.fname} ${case.lname} (${case.caseId})")
+                                    },
+                                    onClick = {
+                                        onSelectedCaseChange(case.id)
+                                        caseMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(14.dp)) {
@@ -141,7 +197,7 @@ fun UploadScreen(
 
         Button(
             onClick = {
-                if (cbctUri != null && panoramicUri != null) {
+                if (cbctUri != null && panoramicUri != null && selectedCaseId != null) {
                     onProcessRequested(cbctUri!!, panoramicUri!!)
                 }
             },
@@ -150,7 +206,16 @@ fun UploadScreen(
                 .height(56.dp),
             enabled = canProcess && !isLoading,
         ) {
-            Text("Process Both", style = MaterialTheme.typography.titleMedium)
+            Text("Upload Files", style = MaterialTheme.typography.titleMedium)
+        }
+
+        if (selectedCaseId == null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Choose a patient case before processing.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         if (isLoading) {
@@ -158,7 +223,7 @@ fun UploadScreen(
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Processing scan...",
+                text = "Uploading files...",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

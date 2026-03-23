@@ -1,0 +1,139 @@
+
+> implant-ai-frontend@0.0.0 lint
+> eslint .
+
+
+D:\CBCT\frontend\dist\assets\index-B4lcK2Mb.js
+   1:1       error  Definition for rule 'react-refresh/only-export-components' was not found   react-refresh/only-export-components
+   9:1588    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+   9:4646    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  17:376     error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  25:928     error  'setImmediate' is not defined                                              no-undef
+  33:596     error  Unexpected combined character in character class                           no-misleading-character-class
+  33:3023    error  Unnecessary escape character: \-                                           no-useless-escape
+  33:4912    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:202     error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  37:1216    error  Empty block statement                                                      no-empty
+  37:2389    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:3868    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:3909    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:4076    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:4103    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:4694    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:6030    error  'MSApp' is not defined                                                     no-undef
+  37:6078    error  'MSApp' is not defined                                                     no-undef
+  37:7458    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:7551    error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:8633    error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  37:9654    error  Expected to return a value in method 'get'                                 getter-return
+  37:9787    error  'a' is defined but never used                                              no-unused-vars
+  37:9789    error  'l' is defined but never used                                              no-unused-vars
+  37:9791    error  'i' is defined but never used                                              no-unused-vars
+  37:9793    error  's' is defined but never used                                              no-unused-vars
+  37:9795    error  'u' is defined but never used                                              no-unused-vars
+  37:9797    error  'c' is defined but never used                                              no-unused-vars
+  37:9970    error  'e' is defined but never used                                              no-unused-vars
+  37:9972    error  't' is defined but never used                                              no-unused-vars
+  37:9974    error  'n' is defined but never used                                              no-unused-vars
+  37:9976    error  'a' is defined but never used                                              no-unused-vars
+  37:9978    error  'l' is defined but never used                                              no-unused-vars
+  37:9980    error  'i' is defined but never used                                              no-unused-vars
+  37:9982    error  's' is defined but never used                                              no-unused-vars
+  37:9984    error  'u' is defined but never used                                              no-unused-vars
+  37:9986    error  'c' is defined but never used                                              no-unused-vars
+  37:10038   error  'e' is defined but never used                                              no-unused-vars
+  37:10040   error  't' is defined but never used                                              no-unused-vars
+  37:10042   error  'n' is defined but never used                                              no-unused-vars
+  37:10044   error  'a' is defined but never used                                              no-unused-vars
+  37:10046   error  'l' is defined but never used                                              no-unused-vars
+  37:10048   error  'i' is defined but never used                                              no-unused-vars
+  37:10050   error  's' is defined but never used                                              no-unused-vars
+  37:10052   error  'u' is defined but never used                                              no-unused-vars
+  37:10054   error  'c' is defined but never used                                              no-unused-vars
+  37:11886   error  Empty block statement                                                      no-empty
+  37:19766   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:20108   error  Invalid typeof comparison value                                            valid-typeof
+  37:20282   error  Invalid typeof comparison value                                            valid-typeof
+  37:22147   error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  37:27687   error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  37:29153   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  37:33253   error  Expected a 'break' statement before 'case'                                 no-fallthrough
+  37:33440   error  Expected a 'break' statement before 'case'                                 no-fallthrough
+  37:34557   error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  37:36002   error  Expected a 'break' statement before 'case'                                 no-fallthrough
+  37:37432   error  Unexpected control character(s) in regular expression: \x00                no-control-regex
+  38:1506    error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  38:1606    error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  38:14646   error  Expected a 'break' statement before 'case'                                 no-fallthrough
+  38:15102   error  Unexpected constant condition                                              no-constant-condition
+  38:15693   error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  38:22200   error  Empty block statement                                                      no-empty
+  38:22209   error  Empty block statement                                                      no-empty
+  38:25574   error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  38:26437   error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  40:3962    error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  40:5084    error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  40:12846   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:12867   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:12937   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:13119   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:13221   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:13301   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:13325   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:13377   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:13732   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:15914   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:16193   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:16639   error  Unnecessary escape character: \/                                           no-useless-escape
+  40:17509   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:17818   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:25812   error  Empty block statement                                                      no-empty
+  40:25847   error  Expected a 'break' statement before 'case'                                 no-fallthrough
+  40:29915   error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+  40:30892   error  't' is defined but never used                                              no-unused-vars
+  40:30894   error  'n' is defined but never used                                              no-unused-vars
+  40:30921   error  't' is defined but never used                                              no-unused-vars
+  40:30923   error  'n' is defined but never used                                              no-unused-vars
+  40:34600   error  Unexpected constant condition                                              no-constant-condition
+  40:39080   error  Unexpected constant condition                                              no-constant-condition
+  40:39366   error  Unexpected constant condition                                              no-constant-condition
+  40:42339   error  Empty block statement                                                      no-empty
+  40:43432   error  Component definition is missing display name                               react/display-name
+  40:52751   error  Expected a conditional expression and instead saw an assignment            no-cond-assign
+  40:54150   error  'u8' is a function                                                         no-func-assign
+  40:54156   error  'c8' is a function                                                         no-func-assign
+  40:55074   error  '__REACT_DEVTOOLS_GLOBAL_HOOK__' is not defined                            no-undef
+  40:55173   error  Empty block statement                                                      no-empty
+  40:57206   error  '__REACT_DEVTOOLS_GLOBAL_HOOK__' is not defined                            no-undef
+  40:57263   error  '__REACT_DEVTOOLS_GLOBAL_HOOK__' is not defined                            no-undef
+  49:25      error  'ot' is a function                                                         no-func-assign
+  49:760     error  Empty block statement                                                      no-empty
+  49:2943    error  'a' is defined but never used                                              no-unused-vars
+  49:4818    error  'n' is defined but never used                                              no-unused-vars
+  58:25      error  'st' is a function                                                         no-func-assign
+  58:6155    error  'e' is defined but never used                                              no-unused-vars
+  58:6211    error  'e' is defined but never used                                              no-unused-vars
+  58:6267    error  'e' is defined but never used                                              no-unused-vars
+  58:6323    error  'e' is defined but never used                                              no-unused-vars
+  58:6801    error  't' is defined but never used                                              no-unused-vars
+  58:6803    error  'n' is defined but never used                                              no-unused-vars
+  58:6838    error  't' is defined but never used                                              no-unused-vars
+  58:6991    error  's' is assigned a value but never used                                     no-unused-vars
+  58:7272    error  'e' is defined but never used                                              no-unused-vars
+  67:25      error  'vn' is a function                                                         no-func-assign
+  67:1112    error  Empty block statement                                                      no-empty
+  67:2201    error  Empty block statement                                                      no-empty
+  67:3841    error  'e' is defined but never used                                              no-unused-vars
+  67:150647  error  'n' is assigned a value but never used                                     no-unused-vars
+  67:157905  error  'u' is defined but never used                                              no-unused-vars
+  67:167937  error  'M' is assigned a value but never used                                     no-unused-vars
+  67:167939  error  'f' is assigned a value but never used                                     no-unused-vars
+
+D:\CBCT\frontend\src\services\caseService.js
+  1:1  error  Definition for rule 'react-refresh/only-export-components' was not found  react-refresh/only-export-components
+
+D:\CBCT\frontend\vite.config.js
+  1:1  error  Definition for rule 'react-refresh/only-export-components' was not found  react-refresh/only-export-components
+
+✖ 126 problems (126 errors, 0 warnings)
+

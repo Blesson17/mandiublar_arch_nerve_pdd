@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - ImplantAI</title>
+    <script src="theme-manager.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="delete-account-modal.css">
+    <style>
+        body {
+            background-color: #F8FAFC;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Sidebar Reused */
+        .sidebar {
+            width: 260px;
+            background: #FFFFFF;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            border-right: 1px solid #E2E8F0;
+            flex-shrink: 0;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 3rem;
+            padding-left: 0.5rem;
+        }
+
+        .logo-box {
+            width: 32px;
+            height: 32px;
+            background-color: #2563EB;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1E293B;
+            letter-spacing: -0.02em;
+        }
+
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex-grow: 1;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: #64748B;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover {
+            background-color: #F1F5F9;
+            color: #334155;
+        }
+
+        .nav-item.active {
+            background-color: #EFF6FF;
+            color: #2563EB;
+        }
+
+        .nav-item i {
+            font-size: 1.25rem;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 0.5rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+
+        .avatar-circle {
+            width: 40px;
+            height: 40px;
+            background-color: #2563EB;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .profile-info h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #334155;
+            margin: 0;
+        }
+
+        .profile-info p {
+            font-size: 0.75rem;
+            color: #94A3B8;
+            margin: 0;
+        }
+
+        .sign-out {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: #94A3B8;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+
+        /* Main Content Layout */
+        .main-content {
+            flex: 1;
+            padding: 2rem 3rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .page-header {
+            margin-bottom: 2rem;
+        }
+
+        .page-header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1E293B;
+        }
+
+        /* Settings Grid */
+        .settings-container {
+            display: grid;
+            grid-template-columns: 240px 1fr;
+            gap: 3rem;
+            align-items: start;
+        }
+
+        /* Settings Sidebar */
+        .settings-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .settings-group-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #94A3B8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+            padding-left: 0.75rem;
+        }
+
+        .settings-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0.75rem;
+            color: #64748B;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.15s;
+        }
+
+        .settings-nav-item:hover {
+            color: #334155;
+            background: #F8FAFC;
+        }
+
+        .settings-nav-item.active {
+            background: #EFF6FF;
+            color: #2563EB;
+            font-weight: 600;
+        }
+
+        .delete-account {
+            color: #EF4444;
+        }
+
+        .delete-account:hover {
+            color: #DC2626;
+            background: #FEF2F2;
+        }
+
+        /* Settings Content */
+        .settings-content {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            max-width: 800px;
+        }
+
+        .settings-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1E293B;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Forms */
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .field-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64748B;
+        }
+
+        .field-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            color: #1E293B;
+            background: #FFFFFF;
+        }
+
+        .field-input:focus {
+            outline: none;
+            border-color: #2563EB;
+        }
+
+        /* Specific Styles for Pages */
+
+        /* Appearance */
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .theme-card {
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .theme-card:hover {
+            border-color: #CBD5E1;
+        }
+
+        .theme-card.active {
+            border-color: #2563EB;
+            background: #EFF6FF;
+        }
+
+        .theme-preview {
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+
+        .theme-preview.light {
+            background: #F8FAFC;
+            color: #F59E0B;
+            border-radius: 6px;
+        }
+
+        .theme-preview.dark {
+            background: #1E293B;
+            color: #60A5FA;
+            border-radius: 6px;
+        }
+
+        .theme-preview.system {
+            background: linear-gradient(90deg, #F8FAFC 50%, #1E293B 50%);
+            color: #64748B;
+            border-radius: 6px;
+        }
+
+        .color-row {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .color-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px transparent;
+            transition: all 0.2s;
+        }
+
+        .color-dot:hover {
+            transform: scale(1.1);
+        }
+
+        .color-dot.active {
+            box-shadow: 0 0 0 2px #E2E8F0;
+        }
+
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+            border-bottom: 1px solid #F1F5F9;
+        }
+
+        .toggle-row:last-child {
+            border-bottom: none;
+        }
+
+        .toggle-info h5 {
+            margin: 0 0 0.25rem 0;
+            color: #1E293B;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .toggle-info p {
+            margin: 0;
+            color: #94A3B8;
+            font-size: 0.8rem;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #CBD5E1;
+            transition: .3s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        input:checked+.slider {
+            background-color: #2563EB;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
+
+        /* Language */
+        .form-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .form-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .label-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .label-main {
+            font-weight: 600;
+            color: #1E293B;
+            font-size: 0.95rem;
+        }
+
+        .label-desc {
+            font-size: 0.8rem;
+            color: #94A3B8;
+        }
+
+        .select-input {
+            padding: 0.6rem 1rem;
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            color: #334155;
+            font-size: 0.9rem;
+            font-weight: 500;
+            background: white;
+            outline: none;
+            min-width: 200px;
+            cursor: pointer;
+        }
+
+        /* Help */
+        .doc-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .doc-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 0;
+            border-bottom: 1px solid #F1F5F9;
+        }
+
+        .doc-item:last-child {
+            border-bottom: none;
+        }
+
+        .doc-label {
+            font-weight: 500;
+            color: #1E293B;
+            font-size: 0.95rem;
+        }
+
+        .doc-icon {
+            color: #64748B;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+
+        .doc-icon:hover {
+            color: #2563EB;
+        }
+
+        .support-text {
+            color: #64748B;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin-bottom: 1.5rem;
+            max-width: 500px;
+        }
+
+        .support-actions {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .contact-btn {
+            background: #0066CC;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        .contact-btn:hover {
+            background: #0052A3;
+        }
+
+        .live-chat-link {
+            color: #1E293B;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .live-chat-link:hover {
+            text-decoration: underline;
+        }
+
+        /* About */
+        .about-hero {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 0;
+            text-align: center;
+        }
+
+        .app-logo-large {
+            width: 80px;
+            height: 80px;
+            background: #0066CC;
+            border-radius: 16px;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 40px;
+        }
+
+        .app-name {
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: #1E293B;
+            margin-bottom: 0.5rem;
+        }
+
+        .app-tagline {
+            color: #64748B;
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .version-pill {
+            background: #E0F2FE;
+            color: #0284C7;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 0.35rem 1rem;
+            border-radius: 20px;
+        }
+
+        .sys-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .sys-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+        }
+
+        .sys-label {
+            color: #94A3B8;
+            font-size: 0.9rem;
+        }
+
+        .sys-value {
+            color: #1E293B;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-align: right;
+        }
+
+        .feature-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .feature-item {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+
+        .check-icon {
+            color: #10B981;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .feature-content h5 {
+            margin: 0 0 0.25rem 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1E293B;
+        }
+
+        .feature-content p {
+            margin: 0;
+            font-size: 0.85rem;
+            color: #64748B;
+            line-height: 1.4;
+        }
+
+        .legal-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .legal-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 1rem 0;
+            cursor: pointer;
+            border-bottom: 1px solid #F8FAFC;
+        }
+
+        .legal-item:last-child {
+            border-bottom: none;
+        }
+
+        .legal-label {
+            font-size: 0.95rem;
+            color: #334155;
+            font-weight: 500;
+        }
+
+        .legal-icon {
+            color: #1E293B;
+            font-size: 1rem;
+        }
+
+        .copyright {
+            text-align: center;
+            color: #94A3B8;
+            font-size: 0.8rem;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo-area">
+            <div class="logo-box"><i class="ph-bold ph-wave-sine"></i></div>
+            <span class="logo-text">ImplantAI</span>
+        </div>
+
+        <nav class="nav-menu">
+            <a href="dashboard.html" class="nav-item">
+                <i class="ph ph-squares-four"></i>
+                Dashboard
+            </a>
+            <a href="upload.html" class="nav-item">
+                <i class="ph ph-upload-simple"></i>
+                Upload
+            </a>
+            <a href="#" class="nav-item">
+                <i class="ph ph-heartbeat"></i>
+                Analysis
+            </a>
+            <a href="#" class="nav-item">
+                <i class="ph ph-file-text"></i>
+                Reports
+            </a>
+            <a href="settings.html" class="nav-item active">
+                <i class="ph ph-gear"></i>
+                Settings
+            </a>
+        </nav>
+
+        <div>
+            <div class="user-profile" onclick="window.location.href='my-profile.html'">
+                <div class="avatar-circle">SW</div>
+                <div class="profile-info">
+                    <h4 id="sidebar-name">Dr. Sarah Wilson</h4>
+                    <p>Oral Surgeon</p>
+                </div>
+                <i class="ph ph-caret-right" style="margin-left: auto; color: #94A3B8;"></i>
+            </div>
+            <a href="index.html" class="sign-out">
+                <i class="ph ph-sign-out"></i>
+                Sign Out
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="page-header">
+            <h1>Settings</h1>
+        </div>
+
+        <div class="settings-container">
+            <!-- Settings Sidebar -->
+            <div class="settings-sidebar">
+
+                <div>
+                    <div class="settings-group-title">Account</div>
+                    <a href="my-profile.html" class="settings-nav-item">
+                        <i class="ph ph-user"></i> My Profile
+                    </a>
+                    <a href="settings.html" class="settings-nav-item active">
+                        <i class="ph ph-hard-drive"></i> Account Settings
+                    </a>
+                    <a href="settings-notifications.html" class="settings-nav-item">
+                        <i class="ph ph-bell"></i> Notifications
+                    </a>
+                    <a href="settings-privacy.html" class="settings-nav-item">
+                        <i class="ph ph-shield-check"></i> Privacy & Security
+                    </a>
+                </div>
+
+                <div>
+                    <div class="settings-group-title">Workspace</div>
+                    <a href="settings-team.html" class="settings-nav-item">
+                        <i class="ph ph-users"></i> Team Members
+                    </a>
+                    <a href="settings-integrations.html" class="settings-nav-item">
+                        <i class="ph ph-plugs"></i> Integrations
+                    </a>
+                    <a href="settings-billing.html" class="settings-nav-item">
+                        <i class="ph ph-credit-card"></i> Billing & Plans
+                    </a>
+                </div>
+
+                <div>
+                    <div class="settings-group-title">Preferences</div>
+                    <a href="settings-appearance.html" class="settings-nav-item">
+                        <i class="ph ph-palette"></i> Appearance
+                    </a>
+                    <a href="settings-language.html" class="settings-nav-item">
+                        <i class="ph ph-globe"></i> Language & Region
+                    </a>
+                </div>
+
+                <div>
+                    <div class="settings-group-title">Support</div>
+                    <a href="settings-help.html" class="settings-nav-item">
+                        <i class="ph ph-question"></i> Help & Support
+                    </a>
+                    <a href="settings-about.html" class="settings-nav-item">
+                        <i class="ph ph-info"></i> About
+                    </a>
+                </div>
+
+                <div>
+                    <div class="settings-group-title">Danger Zone</div>
+                    <a href="#" class="settings-nav-item delete-account">
+                        <i class="ph ph-trash"></i> Delete Account
+                    </a>
+                </div>
+
+            </div>
+
+            <!-- Settings Content -->
+            <div class="settings-content">
+
+                <!-- Profile Information Card -->
+                <div class="settings-card">
+                    <h3 class="card-title">Profile Information</h3>
+
+                    <div class="form-grid">
+                        <div class="form-field">
+                            <label class="field-label">First Name</label>
+                            <input type="text" id="fname" class="field-input" placeholder="First Name">
+                        </div>
+                        <div class="form-field">
+                            <label class="field-label">Last Name</label>
+                            <input type="text" id="lname" class="field-input" placeholder="Last Name">
+                        </div>
+                    </div>
+
+                    <div class="form-field" style="margin-bottom: 2rem;">
+                        <label class="field-label">Email</label>
+                        <input type="email" id="email" class="field-input" placeholder="Email">
+                    </div>
+
+                    <div class="form-field">
+                        <label class="field-label">Clinic Name</label>
+                        <input type="text" id="clinic" class="field-input" placeholder="Clinic Name">
+                    </div>
+
+                    <div style="margin-top: 1.5rem; text-align: right;">
+                        <button onclick="saveSettings()"
+                            style="background: #2563EB; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; cursor: pointer;">Save
+                            Changes</button>
+                    </div>
+                </div>
+
+                <!-- Preferences Card -->
+                <div class="settings-card">
+                    <h3 class="card-title">Preferences</h3>
+                    <!-- (Keeping existing preferences UI static for now as user api doesn't cover these specific fields yet, but profile works) -->
+                    <div class="toggle-row">
+                        <div>
+                            <div style="font-weight: 600; color: #1E293B; font-size: 0.95rem;">Default Implant System
+                            </div>
+                            <div style="font-size: 0.8rem; color: #94A3B8;">Set your preferred manufacturer</div>
+                        </div>
+                        <div style="color: #334155; font-weight: 500; cursor: pointer;">
+                            Straumann <i class="ph ph-caret-down"></i>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const API_URL = '/';
+        const token = localStorage.getItem('implantAI_token');
+        if (!token) {
+            console.warn("No token found, redirecting to login");
+            window.location.href = 'index.html';
+        }
+
+        document.addEventListener('DOMContentLoaded', fetchSettings);
+
+        async function fetchSettings() {
+            try {
+                const res = await fetch(API_URL + 'user', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const user = await res.json();
+
+                // Sidebar
+                document.getElementById('sidebar-name').innerText = user.name;
+                const initials = (user.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                document.querySelectorAll('.avatar-circle').forEach(el => el.innerText = initials);
+
+                // Inputs
+                const nameParts = user.name.split(' ');
+                document.getElementById('fname').value = nameParts[0] || '';
+                document.getElementById('lname').value = nameParts.slice(1).join(' ') || '';
+                document.getElementById('email').value = user.email || '';
+                document.getElementById('clinic').value = user.practice_name || '';
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function saveSettings() {
+            const fname = document.getElementById('fname').value;
+            const lname = document.getElementById('lname').value;
+            const email = document.getElementById('email').value;
+            const clinic = document.getElementById('clinic').value;
+
+            const fullName = `${fname} ${lname}`.trim();
+
+            try {
+                // First get existing to preserve phone etc
+                const resGet = await fetch(API_URL + 'user', { headers: { 'Authorization': 'Bearer ' + token } });
+                const current = await resGet.json();
+
+                const payload = {
+                    ...current,
+                    name: fullName,
+                    email: email,
+                    practice_name: clinic
+                };
+
+                const res = await fetch(API_URL + 'user', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    alert('Settings updated successfully');
+                    localStorage.setItem('implantAI_userName', fullName);
+                    fetchSettings(); // Refresh
+                } else {
+                    alert('Failed to update settings');
+                }
+            } catch (e) {
+                alert('Error saving settings');
+            }
+        }
+    </script>
+    <script src="delete-account-modal.js"></script>
+</body>
+
+</html>

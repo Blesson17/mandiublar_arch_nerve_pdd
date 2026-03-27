@@ -164,7 +164,7 @@ export default function NewCaseModal({ isOpen, onClose, onCaseCreated, existingP
                         <input type="text" className="form-input" placeholder="Auto-generated if empty" />
                     </div>
 
-                    <div className="form-group">
+                    {/* <div className="form-group">
                         <label>Case Type</label>
                         <div className="case-type-group">
                             <div className={`type-option ${formData.caseType === 'Single Implant' ? 'active' : ''}`}
@@ -176,7 +176,7 @@ export default function NewCaseModal({ isOpen, onClose, onCaseCreated, existingP
                                 Full Arch
                             </div>
                         </div>
-                    </div>
+                    </div> */}
 
                     <div className="modal-actions">
                         <button type="button" className="btn-cancel" onClick={onClose} disabled={isLoading}>Cancel</button>

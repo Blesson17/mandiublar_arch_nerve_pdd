@@ -21,3 +21,4 @@ dist
 build
 *.log
 frontend/node_modules
+uploads/

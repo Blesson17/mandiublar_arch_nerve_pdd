@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +35,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.s4.belsson.data.local.entity.CaseEntity
@@ -64,11 +73,13 @@ fun CaseFlowScreen(
     val hasResult = caseFlowResult != null
     val stepTwoDone = archUri != null
     val stepThreeDone = ianUri != null
+    val canAnalyze = stepTwoDone && stepThreeDone
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         OutlinedButton(onClick = onBack) {
@@ -154,7 +165,7 @@ fun CaseFlowScreen(
 
                 Button(
                     onClick = {
-                        if (archUri == null || ianUri == null) {
+                        if (!canAnalyze) {
                             localMessage = "Please choose both ARCH and IAN files first."
                         } else {
                             localMessage = null
@@ -164,7 +175,7 @@ fun CaseFlowScreen(
                     enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Analyze & View Result")
+                    Text(if (isLoading) "Analyzing..." else "Analyze & View Result")
                 }
 
                 if (isLoading) {
@@ -179,26 +190,47 @@ fun CaseFlowScreen(
         if (caseFlowResult != null) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Analysis Image Result", style = MaterialTheme.typography.titleMedium)
-                    if (caseFlowBitmap != null) {
-                        Image(
-                            bitmap = caseFlowBitmap.asImageBitmap(),
-                            contentDescription = "Analysis result",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp),
+                    Text("ARCH Image Result", style = MaterialTheme.typography.titleMedium)
+                    caseFlowBitmap?.let { bmp ->
+                        OverlayedResultImage(
+                            bitmap = bmp,
+                            archPath = caseFlowResult.archCurveData,
+                            nervePath = caseFlowResult.nervePathData,
+                            archColor = Color(0xFFD84B63),
+                            nerveColor = Color(0xFFFF9800),
                         )
-                    } else {
-                        Text(
-                            "Image preview is unavailable for this run.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    } ?: Text(
+                        "ARCH image preview is unavailable for this run.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
 
                     Text("Bone Width: ${caseFlowResult.boneWidth36} mm")
                     Text("Bone Height: ${caseFlowResult.boneHeight} mm")
                     Text("Nerve Distance: ${caseFlowResult.nerveDistance} mm")
                     Text("Safe Implant Length: ${caseFlowResult.safeImplantLength} mm")
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("IAN Nerve Result", style = MaterialTheme.typography.titleMedium)
+                    caseFlowBitmap?.let { bmp ->
+                        OverlayedResultImage(
+                            bitmap = bmp,
+                            archPath = null,
+                            nervePath = caseFlowResult.nervePathData,
+                            archColor = Color.Transparent,
+                            nerveColor = Color(0xFFFF9800),
+                        )
+                    } ?: Text(
+                        "IAN image preview is unavailable for this run.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(caseFlowResult.ianStatusMessage ?: "No IAN status provided", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!caseFlowResult.recommendationLine.isNullOrBlank()) {
+                        Text("Recommendation", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(caseFlowResult.recommendationLine!!)
+                    }
                 }
             }
         }
@@ -224,6 +256,64 @@ fun CaseFlowScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
+    }
+}
+
+@Composable
+private fun OverlayedResultImage(
+    bitmap: Bitmap,
+    archPath: List<List<Double>>?,
+    nervePath: List<List<Double>>?,
+    archColor: Color,
+    nerveColor: Color,
+    modifier: Modifier = Modifier
+        .fillMaxWidth()
+        .height(220.dp),
+) {
+    Box(modifier = modifier) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            archPath?.toPath(bitmap)?.let { path ->
+                drawPath(
+                    path,
+                    color = archColor,
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                )
+            }
+            nervePath?.toPath(bitmap)?.let { path ->
+                drawPath(
+                    path,
+                    color = nerveColor,
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                )
+            }
+        }
+    }
+}
+
+private fun List<List<Double>>.toPath(bitmap: Bitmap): Path? {
+    if (isEmpty()) return null
+    val points = mapNotNull { pair ->
+        val x = pair.getOrNull(0)?.toFloat() ?: return@mapNotNull null
+        val y = pair.getOrNull(1)?.toFloat() ?: return@mapNotNull null
+        x to y
+    }
+    if (points.size < 2) return null
+
+    // Clamp coordinates into bitmap bounds to avoid crashes if data is slightly off-image.
+    fun clampX(v: Float) = v.coerceIn(0f, (bitmap.width - 1).toFloat())
+    fun clampY(v: Float) = v.coerceIn(0f, (bitmap.height - 1).toFloat())
+
+    return Path().apply {
+        val first = points.first()
+        moveTo(clampX(first.first), clampY(first.second))
+        points.drop(1).forEach { (x, y) ->
+            lineTo(clampX(x), clampY(y))
+        }
     }
 }
 

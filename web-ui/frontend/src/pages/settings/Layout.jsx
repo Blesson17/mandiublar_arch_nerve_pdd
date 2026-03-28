@@ -2,10 +2,7 @@ import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
     User,
-    HardDrive,
-    Bell,
     ShieldCheck,
-    Users,
     Palette,
     Info,
     Trash
@@ -28,23 +25,11 @@ export default function SettingsLayout() {
                         <NavLink to="profile" className={({ isActive }) => `settings-nav-item ${isActive ? 'active' : ''}`}>
                             <User size={18} /> My Profile
                         </NavLink>
-                        <NavLink to="account" className={({ isActive }) => `settings-nav-item ${isActive ? 'active' : ''}`}>
-                            <HardDrive size={18} /> Account Settings
-                        </NavLink>
-                        <NavLink to="notifications" className={({ isActive }) => `settings-nav-item ${isActive ? 'active' : ''}`}>
-                            <Bell size={18} /> Notifications
-                        </NavLink>
                         <NavLink to="privacy" className={({ isActive }) => `settings-nav-item ${isActive ? 'active' : ''}`}>
                             <ShieldCheck size={18} /> Privacy & Security
                         </NavLink>
                     </div>
 
-                    <div>
-                        <div className="settings-group-title">Workspace</div>
-                        <NavLink to="team" className={({ isActive }) => `settings-nav-item ${isActive ? 'active' : ''}`}>
-                            <Users size={18} /> Team Members
-                        </NavLink>
-                    </div>
 
                     <div>
                         <div className="settings-group-title">Preferences</div>

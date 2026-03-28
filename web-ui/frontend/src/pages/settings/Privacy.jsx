@@ -37,26 +37,6 @@ export default function Privacy() {
                     </div>
                 </div>
             </div>
-
-            <div className="form-group">
-                <h3 className="settings-group-title" style={{ paddingLeft: 0, marginBottom: '1rem', color: '#1E293B', fontSize: '1rem' }}>Two-Factor Authentication</h3>
-                <div className="toggle-row">
-                    <div className="toggle-info">
-                        <h5>Enable 2FA</h5>
-                        <p>Protect your account with an extra layer of security.</p>
-                    </div>
-                    <button className="contact-btn" style={{ background: '#F1F5F9', color: '#334155' }}>Setup</button>
-                </div>
-                <div className="toggle-row">
-                    <div className="toggle-info">
-                        <h5>Active Sessions</h5>
-                        <p>Manage devices currently logged into your account.</p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', color: '#64748B' }}>
-                        <DeviceMobile size={18} /> Windows PC (Current)
-                    </div>
-                </div>
-            </div>
         </div>
     );
 }

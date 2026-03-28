@@ -2,9 +2,11 @@ package com.s4.belsson.data.repository
 
 import android.content.Context
 import com.s4.belsson.data.local.AppDatabase
+import com.s4.belsson.data.local.entity.CaseEntity
 import com.s4.belsson.data.local.entity.MedicalReportEntity
 import com.s4.belsson.data.local.entity.PatientEntity
 import com.s4.belsson.data.model.AnalysisResponse
+import com.s4.belsson.data.model.CaseAnalysisResponse
 import kotlinx.coroutines.flow.Flow
 
 class LocalMedicalRepository(context: Context) {
@@ -102,6 +104,48 @@ class LocalMedicalRepository(context: Context) {
                 nerveDetected = analysis.ianDetected,
                 recommendation = analysis.recommendationLine,
                 pdfPath = pdfPath
+            )
+        )
+    }
+
+    suspend fun saveCaseFlowReport(case: CaseEntity?, analysis: CaseAnalysisResponse) {
+        val firstName = case?.fname?.ifBlank { null } ?: "Patient"
+        val lastName = case?.lname?.ifBlank { null } ?: "Case"
+        val remoteId = case?.caseId
+
+        val existingByRemote = remoteId?.let { patientDao.getByRemoteId(it) }
+        val existingByName = patientDao.getByName(firstName, lastName)
+        val existing = existingByRemote ?: existingByName
+
+        val patientEntity = PatientEntity(
+            id = existing?.id ?: 0,
+            remotePatientId = existing?.remotePatientId ?: remoteId,
+            firstName = firstName,
+            lastName = lastName,
+            updatedAt = System.currentTimeMillis(),
+            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+        )
+        val patientId = patientDao.upsert(patientEntity).let { inserted ->
+            if (patientEntity.id != 0L) patientEntity.id else inserted
+        }
+
+        val sessionId = "case-${analysis.caseId}-${analysis.createdAt}".takeIf { it.isNotBlank() }
+            ?: "case-${System.currentTimeMillis()}"
+
+        val toDoubleOrZero: (String?) -> Double = { it?.toDoubleOrNull() ?: 0.0 }
+
+        reportDao.upsert(
+            MedicalReportEntity(
+                patientId = patientId,
+                sessionId = sessionId,
+                workflow = "case_flow",
+                scanRegion = "mandible",
+                safeHeightMm = toDoubleOrZero(analysis.safeImplantLength),
+                boneWidthMm = toDoubleOrZero(analysis.boneWidth36),
+                boneHeightMm = toDoubleOrZero(analysis.boneHeight),
+                nerveDetected = !analysis.ianStatusMessage.isNullOrBlank(),
+                recommendation = analysis.recommendationLine ?: analysis.patientExplanation ?: "-",
+                pdfPath = "",
             )
         )
     }

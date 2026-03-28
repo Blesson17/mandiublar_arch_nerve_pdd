@@ -65,7 +65,7 @@ body {
     min-height: 100vh;
     width: 100vw;
     background-color: var(--bg-gray);
-    padding: 2rem;
+    padding: calc(2rem + env(safe-area-inset-top, 0px)) 2rem 2rem;
     overflow-y: auto;
     position: fixed;
     /* Force full screen cover */
@@ -99,7 +99,7 @@ body {
     align-items: center;
     /* Horizontal Center */
     background-color: var(--white);
-    padding: 3rem;
+    padding: 8rem 6rem 3rem;
     position: relative;
     overflow-y: auto;
 }
@@ -584,7 +584,7 @@ body {
 
     .form-section {
         justify-content: flex-start;
-        padding-top: 4rem;
+        padding-top: calc(4rem + env(safe-area-inset-top, 0px));
     }
 
     .brand-header-mobile {

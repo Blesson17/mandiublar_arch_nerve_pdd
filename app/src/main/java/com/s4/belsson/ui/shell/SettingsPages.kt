@@ -33,14 +33,9 @@ object SettingsRoutes {
     const val Home = "settings"
     const val Profile = "settings/profile"
     const val Account = "settings/account"
-    const val Notifications = "settings/notifications"
     const val Privacy = "settings/privacy"
-    const val Team = "settings/team"
-    const val Integrations = "settings/integrations"
-    const val Billing = "settings/billing"
     const val Appearance = "settings/appearance"
     const val Language = "settings/language"
-    const val Help = "settings/help"
     const val About = "settings/about"
     const val Delete = "settings/delete"
 }
@@ -53,15 +48,15 @@ data class SettingsMenuItem(
 
 private val settingsItems = listOf(
     SettingsMenuItem("My Profile", SettingsRoutes.Profile, "ACCOUNT"),
-    SettingsMenuItem("Account Settings", SettingsRoutes.Account, "ACCOUNT"),
-    SettingsMenuItem("Notifications", SettingsRoutes.Notifications, "ACCOUNT"),
-    SettingsMenuItem("Privacy & Security", SettingsRoutes.Privacy, "ACCOUNT"),
-    SettingsMenuItem("Team Members", SettingsRoutes.Team, "WORKSPACE"),
-    SettingsMenuItem("Integrations", SettingsRoutes.Integrations, "WORKSPACE"),
-    SettingsMenuItem("Billing & Plans", SettingsRoutes.Billing, "WORKSPACE"),
+    SettingsMenuItem("Account Privacy", SettingsRoutes.Account, "ACCOUNT"),
+//    SettingsMenuItem("Notifications", SettingsRoutes.Notifications, "ACCOUNT"),
+//    SettingsMenuItem("Privacy & Security", SettingsRoutes.Privacy, "ACCOUNT"),
+//    SettingsMenuItem("Team Members", SettingsRoutes.Team, "WORKSPACE"),
+//    SettingsMenuItem("Integrations", SettingsRoutes.Integrations, "WORKSPACE"),
+//    SettingsMenuItem("Billing & Plans", SettingsRoutes.Billing, "WORKSPACE"),
     SettingsMenuItem("Appearance", SettingsRoutes.Appearance, "PREFERENCES"),
     SettingsMenuItem("Language & Region", SettingsRoutes.Language, "PREFERENCES"),
-    SettingsMenuItem("Help & Support", SettingsRoutes.Help, "SUPPORT"),
+//    SettingsMenuItem("Help & Support", SettingsRoutes.Help, "SUPPORT"),
     SettingsMenuItem("About", SettingsRoutes.About, "SUPPORT"),
     SettingsMenuItem("Delete Account", SettingsRoutes.Delete, "DANGER ZONE"),
 )

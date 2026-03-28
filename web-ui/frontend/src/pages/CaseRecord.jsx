@@ -5,6 +5,59 @@ import { caseService } from '../services/caseService';
 import { analysisService } from '../services/analysisService';
 import './CaseRecord.css';
 
+function ResultImage({ title, imageBase64, overlays = [] }) {
+    const [dims, setDims] = React.useState({ width: 0, height: 0 });
+
+    if (!imageBase64) {
+        return <p className="case-record-muted">{title} image not available.</p>;
+    }
+
+    return (
+        <div className="case-analysis-image-wrap">
+            <img
+                src={`data:image/png;base64,${imageBase64}`}
+                alt={title}
+                className="case-analysis-image"
+                onLoad={(event) => {
+                    const img = event.currentTarget;
+                    setDims({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
+                }}
+            />
+            {dims.width > 0 && dims.height > 0 && overlays.length > 0 && (
+                <svg
+                    className="case-analysis-overlay"
+                    viewBox={`0 0 ${dims.width} ${dims.height}`}
+                    preserveAspectRatio="none"
+                >
+                    {overlays.map((overlay, overlayIndex) => {
+                        const segments = splitOverlaySegments(overlay.points, overlay.maxJumpPx);
+                        return segments.map((segment, segmentIndex) => (
+                            <polyline
+                                key={`${overlay.className || 'overlay'}-${overlayIndex}-${segmentIndex}`}
+                                className={`case-overlay-line ${overlay.className || ''}`.trim()}
+                                points={segment
+                                    .map((p) => {
+                                        const x = Number.isFinite(Number(p?.[0])) ? Number(p[0]) : 0;
+                                        const yRaw = Number.isFinite(Number(p?.[1])) ? Number(p[1]) : 0;
+                                        const y = Math.min(
+                                            Math.max(yRaw + Number(overlay.offsetY || 0), 0),
+                                            dims.height,
+                                        );
+                                        return `${x},${y}`;
+                                    })
+                                    .join(' ')}
+                                fill="none"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        ));
+                    })}
+                </svg>
+            )}
+        </div>
+    );
+}
+
 const inferRoleFromFilename = (filename = '') => {
     const lower = filename.toLowerCase();
     if (lower.startsWith('arch_') || lower.includes('arch')) return 'ARCH';
@@ -17,6 +70,102 @@ const prettyDate = (value) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return 'N/A';
     return date.toLocaleString();
+};
+
+const normalizePathPoints = (rawPoints) => {
+    if (!Array.isArray(rawPoints)) return [];
+    return rawPoints
+        .map((point) => {
+            if (Array.isArray(point) && point.length >= 2) {
+                const x = Number(point[0]);
+                const y = Number(point[1]);
+                return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+            }
+            if (point && typeof point === 'object') {
+                const x = Number(point.x);
+                const y = Number(point.y);
+                return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+            }
+            return null;
+        })
+        .filter(Boolean);
+};
+
+const smoothPath = (points, windowSize = 5) => {
+    if (!Array.isArray(points) || points.length <= 2 || windowSize <= 1) return points || [];
+    const half = Math.max(1, Math.floor(windowSize / 2));
+    const smoothed = points.map((pt, idx) => {
+        let sumX = 0;
+        let sumY = 0;
+        let count = 0;
+        for (let j = idx - half; j <= idx + half; j += 1) {
+            if (j < 0 || j >= points.length) continue;
+            sumX += points[j][0];
+            sumY += points[j][1];
+            count += 1;
+        }
+        return count > 0 ? [sumX / count, sumY / count] : pt;
+    });
+    return smoothed;
+};
+
+const splitOverlaySegments = (points, explicitMaxJumpPx) => {
+    if (!Array.isArray(points) || points.length < 2) return [];
+
+    const distances = [];
+    for (let i = 1; i < points.length; i += 1) {
+        const dx = Number(points[i][0]) - Number(points[i - 1][0]);
+        const dy = Number(points[i][1]) - Number(points[i - 1][1]);
+        distances.push(Math.hypot(dx, dy));
+    }
+
+    const sorted = [...distances].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length > 0
+        ? (sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid])
+        : 0;
+    const maxJumpPx = Number.isFinite(Number(explicitMaxJumpPx))
+        ? Number(explicitMaxJumpPx)
+        : Math.max(42, median * 4.0);
+
+    const segments = [];
+    let current = [points[0]];
+    for (let i = 1; i < points.length; i += 1) {
+        const dx = Number(points[i][0]) - Number(points[i - 1][0]);
+        const dy = Number(points[i][1]) - Number(points[i - 1][1]);
+        const distance = Math.hypot(dx, dy);
+        if (distance > maxJumpPx) {
+            if (current.length > 1) segments.push(current);
+            current = [points[i]];
+        } else {
+            current.push(points[i]);
+        }
+    }
+    if (current.length > 1) segments.push(current);
+    return segments;
+};
+
+const buildArchOverlays = (archResult) => {
+    // Prefer arch curve if available; otherwise use planning contours.
+    const archCurve = normalizePathPoints(archResult?.arch_curve_data);
+    const planning = archResult?.planning_overlay_data || {};
+    const outer = normalizePathPoints(planning.outer_contour);
+    const inner = normalizePathPoints(planning.inner_contour);
+    const guide = normalizePathPoints(planning.base_guide);
+
+    const overlays = [];
+
+    const archOffset = -40;
+    const smoothInner = smoothPath(inner, 7);
+    const smoothArch = smoothPath(archCurve, 7);
+
+    if (smoothInner.length > 1) {
+        overlays.push({ points: smoothInner, className: 'arch-overlay-inner', maxJumpPx: 18, offsetY: archOffset });
+    } else if (smoothArch.length > 1) {
+        overlays.push({ points: smoothArch, className: 'arch-overlay-inner', maxJumpPx: 18, offsetY: archOffset });
+    }
+
+    return overlays;
 };
 
 export default function CaseRecord() {
@@ -136,7 +285,21 @@ export default function CaseRecord() {
 
     const archUploaded = files.some((file) => inferRoleFromFilename(file.filename) === 'ARCH');
     const ianUploaded = files.some((file) => inferRoleFromFilename(file.filename) === 'IAN');
-    const hasImage = Boolean(analysis?.opg_image_base64);
+    const archResult = analysis?.arch_result && Object.keys(analysis.arch_result).length > 0
+        ? analysis.arch_result
+        : analysis;
+    const ianResult = analysis?.ian_result && Object.keys(analysis.ian_result).length > 0
+        ? analysis.ian_result
+        : null;
+    const archOverlays = buildArchOverlays(archResult);
+    const ianOverlayPoints = normalizePathPoints(
+        (Array.isArray(ianResult?.safe_zone_path_data) && ianResult.safe_zone_path_data.length > 1)
+            ? ianResult.safe_zone_path_data
+            : ianResult?.nerve_path_data,
+    );
+    const ianOverlays = ianOverlayPoints.length > 1
+        ? [{ points: ianOverlayPoints, className: 'ian-overlay', offsetY: -140, maxJumpPx: 32 }]
+        : [];
 
     const steps = [
         { title: 'Step 1: Case selected', done: Boolean(caseRow) },
@@ -261,32 +424,29 @@ export default function CaseRecord() {
                     <p className="case-record-muted">No analysis result yet. Upload files and run analysis to populate report details.</p>
                 ) : (
                     <>
-                        {hasImage && (
-                            <div className="case-analysis-image-wrap">
-                                <img
-                                    src={`data:image/png;base64,${analysis.opg_image_base64}`}
-                                    alt="Analysis result"
-                                    className="case-analysis-image"
+                        <div className="case-result-grid">
+                            <div className="case-result-panel">
+                                <h4>ARCH Result</h4>
+                                <ResultImage
+                                    title="ARCH analysis"
+                                    imageBase64={archResult?.opg_image_base64}
+                                    overlays={archOverlays}
                                 />
                             </div>
-                        )}
 
-                        <div className="case-record-info-grid">
-                            <div>
-                                <label>Bone Height</label>
-                                <span>{analysis.bone_height || '--'} mm</span>
-                            </div>
-                            <div>
-                                <label>Bone Width</label>
-                                <span>{analysis.bone_width_36 || '--'} mm</span>
-                            </div>
-                            <div>
-                                <label>Nerve Distance</label>
-                                <span>{analysis.nerve_distance || '--'} mm</span>
-                            </div>
-                            <div>
-                                <label>Safe Implant Length</label>
-                                <span>{analysis.safe_implant_length || '--'} mm</span>
+                            <div className="case-result-panel">
+                                <h4>IAN Result</h4>
+                                {ianResult ? (
+                                    <>
+                                        <ResultImage
+                                            title="IAN analysis"
+                                            imageBase64={ianResult.opg_image_base64}
+                                            overlays={ianOverlays}
+                                        />
+                                    </>
+                                ) : (
+                                    <p className="case-record-muted">IAN result not available yet. Upload IAN file and run analysis again.</p>
+                                )}
                             </div>
                         </div>
 

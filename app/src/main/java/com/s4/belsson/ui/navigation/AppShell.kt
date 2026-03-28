@@ -3,7 +3,6 @@ package com.s4.belsson.ui.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -13,11 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
@@ -40,18 +35,12 @@ import com.s4.belsson.ui.shell.DashboardScreen
 import com.s4.belsson.ui.shell.SettingsAboutPage
 import com.s4.belsson.ui.shell.SettingsAccountPage
 import com.s4.belsson.ui.shell.SettingsAppearancePage
-import com.s4.belsson.ui.shell.SettingsBillingPage
 import com.s4.belsson.ui.shell.SettingsDeletePage
-import com.s4.belsson.ui.shell.SettingsHelpPage
 import com.s4.belsson.ui.shell.SettingsHomeScreen
-import com.s4.belsson.ui.shell.SettingsIntegrationsPage
 import com.s4.belsson.ui.shell.SettingsLanguagePage
-import com.s4.belsson.ui.shell.SettingsNotificationsPage
 import com.s4.belsson.ui.shell.SettingsPrivacyPage
 import com.s4.belsson.ui.shell.SettingsProfilePage
 import com.s4.belsson.ui.shell.SettingsRoutes
-import com.s4.belsson.ui.shell.SettingsTeamPage
-import com.s4.belsson.ui.shell.UploadTabScreen
 
 private data class AppTab(
     val route: String,
@@ -73,7 +62,6 @@ fun AppShell(
 
     val tabs = listOf(
         AppTab("dashboard", "Dashboard", { Icon(Icons.Filled.Home, contentDescription = "Dashboard") }),
-        AppTab("upload", "Upload", { Icon(Icons.Filled.Add, contentDescription = "Upload") }),
         AppTab("analysis", "Analysis", { Icon(Icons.Filled.Search, contentDescription = "Analysis") }),
         AppTab("reports", "Reports", { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Reports") }),
         AppTab("settings", "Settings", { Icon(Icons.Filled.Settings, contentDescription = "Settings") }),
@@ -81,24 +69,7 @@ fun AppShell(
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
-    val currentRoute = currentDestination?.route
 
-    var lastAnalyzedSessionId by rememberSaveable { mutableStateOf<String?>(null) }
-
-    val currentSuccessSessionId = (planningState as? com.s4.belsson.ui.planning.PlanningUiState.Success)
-        ?.panoramicAnalysis
-        ?.sessionId
-
-    LaunchedEffect(currentSuccessSessionId, currentRoute) {
-        if (currentSuccessSessionId.isNullOrBlank()) return@LaunchedEffect
-        if (currentSuccessSessionId == lastAnalyzedSessionId) return@LaunchedEffect
-        if (currentRoute != "upload") return@LaunchedEffect
-
-        lastAnalyzedSessionId = currentSuccessSessionId
-        navController.navigate("analysis") {
-            launchSingleTop = true
-        }
-    }
 
     Scaffold(
         modifier = modifier,
@@ -175,17 +146,6 @@ fun AppShell(
                     onDismissMessage = { planningViewModel.clearCaseFlowMessage() },
                 )
             }
-            composable("upload") {
-                UploadTabScreen(
-                    uiState = planningState,
-                    cases = domainState.cases,
-                    selectedCaseId = selectedCaseId,
-                    onSelectedCaseChange = { planningViewModel.selectCase(it) },
-                    onProcessRequested = { cbct, pano ->
-                        planningViewModel.uploadBoth(cbct, pano)
-                    },
-                )
-            }
             composable("analysis") {
                 AnalysisScreen(
                     viewModel = planningViewModel,
@@ -194,9 +154,8 @@ fun AppShell(
                     selectedCaseId = selectedCaseId,
                     onSelectedCaseChange = { planningViewModel.selectCase(it) },
                     onAnalyzeSelectedCase = {
-                        navController.navigate("upload") {
-                            launchSingleTop = true
-                        }
+                        val selected = selectedCaseId ?: return@AnalysisScreen
+                        navController.navigate("case/$selected") { launchSingleTop = true }
                     },
                 )
             }
@@ -221,28 +180,8 @@ fun AppShell(
             composable(SettingsRoutes.Account) {
                 SettingsAccountPage(authState = authState)
             }
-            composable(SettingsRoutes.Notifications) {
-                SettingsNotificationsPage()
-            }
             composable(SettingsRoutes.Privacy) {
                 SettingsPrivacyPage()
-            }
-            composable(SettingsRoutes.Team) {
-                SettingsTeamPage(
-                    domainState = domainState,
-                    onAddTeamMember = { name, email, role ->
-                        planningViewModel.addTeamMember(name, email, role)
-                    },
-                    onRemoveTeamMember = { memberId ->
-                        planningViewModel.removeTeamMember(memberId)
-                    },
-                )
-            }
-            composable(SettingsRoutes.Integrations) {
-                SettingsIntegrationsPage()
-            }
-            composable(SettingsRoutes.Billing) {
-                SettingsBillingPage(domainState = domainState)
             }
             composable(SettingsRoutes.Appearance) {
                 SettingsAppearancePage(
@@ -259,9 +198,6 @@ fun AppShell(
                         planningViewModel.updateSettings(theme, language)
                     },
                 )
-            }
-            composable(SettingsRoutes.Help) {
-                SettingsHelpPage()
             }
             composable(SettingsRoutes.About) {
                 SettingsAboutPage()

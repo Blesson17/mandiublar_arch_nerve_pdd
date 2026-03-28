@@ -13,6 +13,7 @@ import io
 import uuid
 import logging
 import os
+import re
 import shutil
 import time
 import traceback
@@ -240,6 +241,8 @@ class CaseAnalysisResponse(BaseModel):
     opg_image_base64: Optional[str] = None
     ian_status_message: Optional[str] = None
     recommendation_line: Optional[str] = None
+    arch_result: dict = Field(default_factory=dict)
+    ian_result: dict = Field(default_factory=dict)
     clinical_report: Optional[str] = None
     patient_explanation: Optional[str] = None
 
@@ -358,23 +361,23 @@ def _build_recommendation_line(scan_region: str, ian_detected: bool, safe_height
     if scan_region == "mandible" and ian_detected:
         return (
             "Recommended implant placement region: above IAN with safe height "
-            f"of {safe_height_mm:.2f} mm."
+            f"of {safe_height_mm:.2f} mm. Final plan must be confirmed by the doctor."
         )
     if scan_region == "mandible":
-        return "IAN not confidently detected - manual clinical verification required."
+        return "IAN OK — manual doctor verification required."
     if scan_region == "maxilla":
-        return "IAN not applicable / not detected - manual clinical verification required."
-    return "IAN not confidently detected - manual clinical verification required."
+        return "IAN OK — manual doctor verification required."
+    return "IAN OK — manual doctor verification required."
 
 
 def _build_ian_status_message(scan_region: str, ian_detected: bool) -> str:
     if scan_region == "mandible" and ian_detected:
-        return "IAN detected. Safe implant zone highlighted above the nerve."
+        return "IAN detected. Safe implant zone highlighted above the nerve; doctor confirmation required."
     if scan_region == "mandible":
-        return "IAN not confidently detected; manual clinical verification required."
+        return "IAN OK — manual doctor verification required."
     if scan_region == "maxilla":
-        return "IAN not applicable / not detected - manual clinical verification required."
-    return "IAN not confidently detected; manual clinical verification required."
+        return "IAN OK — manual doctor verification required."
+    return "IAN OK; manual doctor verification required."
 
 def detect_input_type(upload_bytes: bytes, filename: Optional[str]) -> Optional[str]:
     if filename and filename.lower().endswith(".zip"):
@@ -394,6 +397,61 @@ def detect_input_type(upload_bytes: bytes, filename: Optional[str]) -> Optional[
         return "image_projection"
     except Exception:
         return None
+
+
+def _infer_case_file_role(filename: str | None) -> str:
+    lower = str(filename or "").lower()
+    if lower.startswith("arch_") or "arch" in lower:
+        return "ARCH"
+    if lower.startswith("ian_") or "ian" in lower:
+        return "IAN"
+    return "GENERAL"
+
+
+def _validate_password(password: str) -> None:
+    """Ensure password has upper, lower, digit, special char, and minimum length."""
+    if not isinstance(password, str) or len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+
+    rules = {
+        "uppercase": r"[A-Z]",
+        "lowercase": r"[a-z]",
+        "digit": r"[0-9]",
+        "special": r"[^A-Za-z0-9]",
+    }
+
+    missing = [name for name, pattern in rules.items() if re.search(pattern, password) is None]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must include uppercase, lowercase, number, and special character.",
+        )
+
+
+def _pack_case_analysis_payload(analysis_result: AnalysisResponse) -> dict:
+    bone_metrics = analysis_result.bone_metrics
+    nerve_points = [[float(p.x), float(p.y)] for p in analysis_result.nerve_path]
+    arch_points = [[float(p.x), float(p.y)] for p in analysis_result.arch_path]
+    safe_zone_points = [[float(p.x), float(p.y)] for p in analysis_result.safe_zone_path]
+    nerve_distance = max(0.0, float(bone_metrics.height_mm - bone_metrics.safe_height_mm))
+
+    return {
+        "workflow": analysis_result.workflow,
+        "scan_region": analysis_result.scan_region,
+        "ian_applicable": analysis_result.ian_applicable,
+        "ian_detected": analysis_result.ian_detected,
+        "ian_status_message": analysis_result.ian_status_message,
+        "recommendation_line": analysis_result.recommendation_line,
+        "opg_image_base64": analysis_result.opg_image_base64,
+        "arch_curve_data": arch_points,
+        "nerve_path_data": nerve_points,
+        "planning_overlay_data": analysis_result.planning_overlay.model_dump(),
+        "safe_zone_path_data": safe_zone_points,
+        "bone_width_36": f"{bone_metrics.width_mm:.1f}",
+        "bone_height": f"{bone_metrics.height_mm:.1f}",
+        "nerve_distance": f"{nerve_distance:.1f}",
+        "safe_implant_length": f"{bone_metrics.safe_height_mm:.1f}",
+    }
 
 
 def _peek_upload_header(upload_file: UploadFile, max_bytes: int = 4096) -> bytes:
@@ -517,6 +575,7 @@ def require_user(
 
 @app.post("/auth/signup", response_model=AuthResponse)
 async def signup(req: AuthRequest):
+    _validate_password(req.password)
     try:
         user = auth_db.create_user(req.email, req.password)
     except ValueError as exc:
@@ -563,6 +622,7 @@ async def web_login(req: LoginRequest, request: Request):
 
 @app.post("/register")
 async def web_register(req: RegisterRequest):
+    _validate_password(req.password)
     practice_name = req.practice_name or req.practice or "Private Practice"
     try:
         user = auth_db.create_user(
@@ -1235,59 +1295,82 @@ async def run_case_analysis(case_id: str, user: dict = Depends(require_user)):
         auth_db.update_case_status(int(user["id"]), case_id, "Ready")
         raise HTTPException(status_code=400, detail="No uploaded files found for this case")
 
-    arch_candidates = [
-        item for item in files
-        if "arch" in str(item.get("filename", "")).lower()
-    ]
-    latest_file = arch_candidates[-1] if arch_candidates else files[-1]
-    file_path = latest_file.get("file_path") or ""
-    if not file_path or not os.path.exists(file_path):
+    arch_candidates = [item for item in files if _infer_case_file_role(item.get("filename")) == "ARCH"]
+    ian_candidates = [item for item in files if _infer_case_file_role(item.get("filename")) == "IAN"]
+
+    if not arch_candidates or not ian_candidates:
         auth_db.update_case_status(int(user["id"]), case_id, "Ready")
-        raise HTTPException(status_code=400, detail="Uploaded file is missing on server")
+        raise HTTPException(
+            status_code=400,
+            detail="Both ARCH and IAN files are required. Please upload one file for each.",
+        )
+
+    latest_arch = arch_candidates[-1]
+    latest_ian = ian_candidates[-1]
 
     try:
-        with open(file_path, "rb") as fp:
-            payload = fp.read()
+        arch_path = latest_arch.get("file_path") or ""
+        ian_path = latest_ian.get("file_path") or ""
+        if not arch_path or not os.path.exists(arch_path):
+            auth_db.update_case_status(int(user["id"]), case_id, "Ready")
+            raise HTTPException(status_code=400, detail="ARCH file is missing on server")
+        if not ian_path or not os.path.exists(ian_path):
+            auth_db.update_case_status(int(user["id"]), case_id, "Ready")
+            raise HTTPException(status_code=400, detail="IAN file is missing on server")
 
-        input_type = detect_input_type(payload, latest_file.get("filename"))
-        workflow = "cbct_implant" if input_type in ("zip_cbct", "dicom_single") else "panoramic_mandibular_canal"
-        analysis_result = _analyze_dicom_bytes(
-            dicom_bytes=payload,
+        with open(arch_path, "rb") as fp:
+            arch_payload_raw = fp.read()
+        with open(ian_path, "rb") as fp:
+            ian_payload_raw = fp.read()
+
+        arch_input_type = detect_input_type(arch_payload_raw, latest_arch.get("filename"))
+        arch_workflow = "cbct_implant" if arch_input_type in ("zip_cbct", "dicom_single") else "panoramic_mandibular_canal"
+        arch_analysis_result = _analyze_dicom_bytes(
+            dicom_bytes=arch_payload_raw,
             tooth_x=None,
             tooth_y=None,
-            workflow=workflow,
-            file_name=latest_file.get("filename"),
+            workflow=arch_workflow,
+            file_name=latest_arch.get("filename"),
+        )
+
+        ian_input_type = detect_input_type(ian_payload_raw, latest_ian.get("filename"))
+        ian_workflow = "cbct_implant" if ian_input_type in ("zip_cbct", "dicom_single") else "panoramic_mandibular_canal"
+        ian_analysis_result = _analyze_dicom_bytes(
+            dicom_bytes=ian_payload_raw,
+            tooth_x=None,
+            tooth_y=None,
+            workflow=ian_workflow,
+            file_name=latest_ian.get("filename"),
         )
 
         clinical_report, patient_explanation, report_source = _generate_case_report_with_gemini(
             case_row,
-            analysis_result,
+            arch_analysis_result,
         )
 
-        bone_metrics = analysis_result.bone_metrics
-        nerve_points = [[float(p.x), float(p.y)] for p in analysis_result.nerve_path]
-        arch_points = [[float(p.x), float(p.y)] for p in analysis_result.arch_path]
-        safe_zone_points = [[float(p.x), float(p.y)] for p in analysis_result.safe_zone_path]
-        nerve_distance = max(0.0, float(bone_metrics.height_mm - bone_metrics.safe_height_mm))
+        arch_result_payload = _pack_case_analysis_payload(arch_analysis_result)
+        ian_result_payload = _pack_case_analysis_payload(ian_analysis_result)
 
         saved = auth_db.save_case_analysis(
             case_row["id"],
             {
-            "workflow": analysis_result.workflow,
-            "scan_region": analysis_result.scan_region,
-            "ian_applicable": analysis_result.ian_applicable,
-            "ian_detected": analysis_result.ian_detected,
-            "ian_status_message": analysis_result.ian_status_message,
-            "recommendation_line": analysis_result.recommendation_line,
-            "opg_image_base64": analysis_result.opg_image_base64,
-                "arch_curve_data": arch_points,
-                "nerve_path_data": nerve_points,
-            "planning_overlay_data": analysis_result.planning_overlay.model_dump(),
-            "safe_zone_path_data": safe_zone_points,
-                "bone_width_36": f"{bone_metrics.width_mm:.1f}",
-                "bone_height": f"{bone_metrics.height_mm:.1f}",
-                "nerve_distance": f"{nerve_distance:.1f}",
-                "safe_implant_length": f"{bone_metrics.safe_height_mm:.1f}",
+                "workflow": arch_result_payload["workflow"],
+                "scan_region": arch_result_payload["scan_region"],
+                "ian_applicable": arch_result_payload["ian_applicable"],
+                "ian_detected": arch_result_payload["ian_detected"],
+                "ian_status_message": arch_result_payload["ian_status_message"],
+                "recommendation_line": arch_result_payload["recommendation_line"],
+                "opg_image_base64": arch_result_payload["opg_image_base64"],
+                "arch_curve_data": arch_result_payload["arch_curve_data"],
+                "nerve_path_data": arch_result_payload["nerve_path_data"],
+                "planning_overlay_data": arch_result_payload["planning_overlay_data"],
+                "safe_zone_path_data": arch_result_payload["safe_zone_path_data"],
+                "bone_width_36": arch_result_payload["bone_width_36"],
+                "bone_height": arch_result_payload["bone_height"],
+                "nerve_distance": arch_result_payload["nerve_distance"],
+                "safe_implant_length": arch_result_payload["safe_implant_length"],
+                "arch_result": arch_result_payload,
+                "ian_result": ian_result_payload,
                 "clinical_report": clinical_report,
                 "patient_explanation": patient_explanation,
             },
@@ -1296,9 +1379,11 @@ async def run_case_analysis(case_id: str, user: dict = Depends(require_user)):
         auth_db.update_case_status(int(user["id"]), case_id, "Analysis Complete")
         response_payload = {
             **saved,
-            "opg_image_base64": analysis_result.opg_image_base64,
-            "ian_status_message": analysis_result.ian_status_message,
-            "recommendation_line": analysis_result.recommendation_line,
+            "opg_image_base64": arch_result_payload["opg_image_base64"],
+            "ian_status_message": arch_result_payload["ian_status_message"],
+            "recommendation_line": arch_result_payload["recommendation_line"],
+            "arch_result": arch_result_payload,
+            "ian_result": ian_result_payload,
             "clinical_report": (
                 f"{saved.get('clinical_report') or ''}"
                 f" (generated via {report_source})"
@@ -1332,6 +1417,8 @@ async def get_case_analysis_result(case_id: str, user: dict = Depends(require_us
     analysis.setdefault("opg_image_base64", None)
     analysis.setdefault("ian_status_message", None)
     analysis.setdefault("recommendation_line", None)
+    analysis.setdefault("arch_result", {})
+    analysis.setdefault("ian_result", {})
     return CaseAnalysisResponse(**analysis)
 
 

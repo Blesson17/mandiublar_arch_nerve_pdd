@@ -54,7 +54,7 @@ fun AnalysisScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Start AI Analysis", style = MaterialTheme.typography.headlineSmall)
-                    Text("Select a patient case, then tap Analyze with AI to upload CBCT and panoramic files.")
+                    Text("Select a patient case, then jump to its details to upload ARCH/IAN and view results inline.")
 
                     Box {
                         OutlinedButton(
@@ -100,13 +100,13 @@ fun AnalysisScreen(
 
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = onAnalyzeSelectedCase, enabled = selectedCaseId != null) {
-                        Text("Analyze with AI")
+                        Text("Open Case to Analyze")
                     }
                     Text(
                         if (selectedCaseId == null) {
                             "Please select a case first."
                         } else {
-                            "Selected patient is ready. Continue in Upload tab to process files."
+                            "Selected patient is ready. Continue in case details to pick files and analyze."
                         },
                         color = if (selectedCaseId == null) {
                             MaterialTheme.colorScheme.error

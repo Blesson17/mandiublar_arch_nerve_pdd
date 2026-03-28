@@ -61,44 +61,6 @@ export default function Appearance() {
                 ))}
             </div>
 
-            <h3 className="card-title" style={{ marginTop: '2rem' }}>Display</h3>
-
-            <div className="toggle-row">
-                <div className="toggle-info">
-                    <h5>Compact Mode</h5>
-                    <p>Reduce spacing for more content</p>
-                </div>
-                <div className="check-box-wrapper" onClick={() => toggle('implantAI_compact', compact, setCompact)}>
-                    <div className={`custom-check ${compact ? 'checked' : ''}`}>
-                        <Check weight="bold" />
-                    </div>
-                </div>
-            </div>
-
-            <div className="toggle-row">
-                <div className="toggle-info">
-                    <h5>Show Tooltips</h5>
-                    <p>Display helpful hints on hover</p>
-                </div>
-                <div className="check-box-wrapper" onClick={() => toggle('implantAI_tooltips', tooltips, setTooltips)}>
-                    <div className={`custom-check ${tooltips ? 'checked' : ''}`}>
-                        <Check weight="bold" />
-                    </div>
-                </div>
-            </div>
-
-            <div className="toggle-row">
-                <div className="toggle-info">
-                    <h5>Animations</h5>
-                    <p>Enable UI animations</p>
-                </div>
-                <div className="check-box-wrapper" onClick={() => toggle('implantAI_animations', animations, setAnimations)}>
-                    <div className={`custom-check ${animations ? 'checked' : ''}`}>
-                        <Check weight="bold" />
-                    </div>
-                </div>
-            </div>
-
         </div>
     );
 }

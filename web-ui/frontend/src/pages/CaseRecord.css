@@ -164,7 +164,26 @@
     gap: 0.6rem;
 }
 
+.case-result-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+}
+
+.case-result-panel {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.8rem;
+    background: #f8fafc;
+}
+
+.case-result-panel h4 {
+    margin: 0 0 0.65rem;
+    color: #0f172a;
+}
+
 .case-analysis-image-wrap {
+    position: relative;
     border: 1px solid #dbe3ef;
     border-radius: 12px;
     overflow: hidden;
@@ -177,6 +196,41 @@
     width: 100%;
     max-height: 360px;
     object-fit: contain;
+}
+
+.case-analysis-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.case-analysis-overlay .case-overlay-line {
+    stroke: #2563eb;
+    stroke-width: 3;
+}
+
+.case-analysis-overlay .case-overlay-line.arch-overlay-outer {
+    stroke: #ef4444;
+    stroke-width: 4;
+    filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.95));
+}
+
+.case-analysis-overlay .case-overlay-line.arch-overlay-inner {
+    stroke: rgba(248, 113, 113, 0.92);
+    stroke-width: 3;
+}
+
+.case-analysis-overlay .case-overlay-line.arch-overlay-guide {
+    stroke: rgba(239, 68, 68, 0.9);
+    stroke-width: 3;
+}
+
+.case-analysis-overlay .case-overlay-line.ian-overlay {
+    stroke: #f97316;
+    stroke-width: 4;
+    filter: drop-shadow(0 0 2px rgba(249, 115, 22, 0.9));
 }
 
 .case-record-note {

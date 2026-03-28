@@ -369,6 +369,7 @@ class PlanningViewModel(application: Application) : AndroidViewModel(application
                             _caseFlowResult.value = response
                             _caseFlowBitmap.value = decodeBase64ToBitmap(response.opgImageBase64.orEmpty())
                             _caseFlowMessage.value = "The results look good, but AI is not 100% accurate. Please consider expert clinical judgment."
+                            viewModelScope.launch { localRepository.saveCaseFlowReport(selectedCase, response) }
                             refreshDomainData()
                         },
                         onFailure = { err ->

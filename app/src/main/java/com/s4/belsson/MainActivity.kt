@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -12,7 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.s4.belsson.ui.navigation.AppShell
 import com.s4.belsson.ui.planning.AuthScreen
 import com.s4.belsson.ui.planning.AuthUiState
@@ -20,21 +20,25 @@ import com.s4.belsson.ui.planning.PlanningViewModel
 import com.s4.belsson.ui.theme.BelssonTheme
 
 class MainActivity : ComponentActivity() {
+    private val planningViewModel: PlanningViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        val splashScreen = installSplashScreen()
+        splashScreen.setKeepOnScreenCondition {
+            planningViewModel.authState.value is AuthUiState.Loading
+        }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             BelssonTheme {
-                BelssonApp()
+                BelssonApp(planningViewModel)
             }
         }
     }
 }
 
 @Composable
-fun BelssonApp() {
-    val planningViewModel: PlanningViewModel = viewModel()
+fun BelssonApp(planningViewModel: PlanningViewModel) {
     val authState by planningViewModel.authState.collectAsStateWithLifecycle()
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->

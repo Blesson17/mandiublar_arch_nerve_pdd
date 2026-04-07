@@ -139,10 +139,24 @@ const Reports = () => {
     };
 
     const handlePrint = () => {
-        window.print();
+        // Use Android native print when inside WebView
+        if (window.Android && window.Android.print) {
+            window.Android.print();
+        } else {
+            window.print();
+        }
     };
 
     const handleShare = async () => {
+        const shareText = `Surgical Plan for ${selectedCase?.fname} ${selectedCase?.lname} — ${window.location.href}`;
+
+        // Use Android native share sheet when inside WebView
+        if (window.Android && window.Android.share) {
+            window.Android.share(shareText);
+            return;
+        }
+
+        // Web Share API (mobile browsers)
         if (navigator.share) {
             try {
                 await navigator.share({
@@ -151,13 +165,16 @@ const Reports = () => {
                     url: window.location.href,
                 });
             } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error('Error sharing:', error);
-                }
+                if (error.name !== 'AbortError') console.error('Share error:', error);
             }
         } else {
-            // Fallback for browsers that don't support Web Share API
-            alert('Sharing is not supported in this browser. You can copy the URL to share.');
+            // Desktop fallback — copy to clipboard
+            try {
+                await navigator.clipboard.writeText(window.location.href);
+                alert('Link copied to clipboard!');
+            } catch {
+                alert('Copy this link to share: ' + window.location.href);
+            }
         }
     };
 

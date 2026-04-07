@@ -41,12 +41,12 @@ export default function SettingsLayout() {
                         </NavLink>
                     </div>
 
-                    <div>
+                    {/* <div>
                         <div className="settings-group-title">Danger Zone</div>
                         <NavLink to="delete-account" className="settings-nav-item delete-account">
                             <Trash size={18} /> Delete Account
                         </NavLink>
-                    </div>
+                    </div> */}
 
                 </div>
 

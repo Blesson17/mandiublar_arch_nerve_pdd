@@ -167,11 +167,11 @@ export default function Analysis() {
                                     </div>
                                 )}
                             </div>
-
+                            {/* 
                             <MetricCard icon={<Ruler />} title="Bone Height" value={analysisData.bone_height} unit="mm" />
                             <MetricCard icon={<ArrowsLeftRight />} title="Bone Width (36)" value={analysisData.bone_width_36} unit="mm" />
                             <MetricCard icon={<Warning />} title="Nerve Distance" value={analysisData.nerve_distance} unit="mm" />
-
+ */}
                             <div style={{ background: '#ECFDF5', padding: '1.5rem', borderRadius: '12px', border: '1px solid #10B981' }}>
                                 <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#059669', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                     <CheckCircle weight="bold" /> Safe Implant Length

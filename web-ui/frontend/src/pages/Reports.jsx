@@ -115,6 +115,52 @@ const Reports = () => {
         navigate('/dashboard');
     };
 
+    const handleDownloadPDF = () => {
+        const element = document.getElementById('report-capture-area');
+        if (!element) return;
+
+        const opt = {
+            margin: 10,
+            filename: `${selectedCase.fname}_${selectedCase.lname}_Report_${selectedCase.case_id || selectedCase.id}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        // Dynamically load html2pdf if not present
+        if (window.html2pdf) {
+            window.html2pdf().set(opt).from(element).save();
+        } else {
+            const script = document.createElement('script');
+            script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+            script.onload = () => window.html2pdf().set(opt).from(element).save();
+            document.head.appendChild(script);
+        }
+    };
+
+    const handlePrint = () => {
+        window.print();
+    };
+
+    const handleShare = async () => {
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'ImplantAI Surgical Plan',
+                    text: `Surgical Plan for ${selectedCase?.fname} ${selectedCase?.lname}`,
+                    url: window.location.href,
+                });
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Error sharing:', error);
+                }
+            }
+        } else {
+            // Fallback for browsers that don't support Web Share API
+            alert('Sharing is not supported in this browser. You can copy the URL to share.');
+        }
+    };
+
     if (loading) {
         return (
             <div className="reports-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#64748B' }}>
@@ -182,42 +228,42 @@ const Reports = () => {
 
             {selectedCase && (
                 <div className="report-preview">
-                    <div className="preview-header">
-                        <div className="preview-title">
-                            <h1>Surgical Plan</h1>
-                            <span className="case-id">Case ID: {selectedCase.case_id || selectedCase.id}</span>
+                    <div id="report-capture-area">
+                        <div className="preview-header">
+                            <div className="preview-title">
+                                <h1>Surgical Plan</h1>
+                                <span className="case-id">Case ID: {selectedCase.case_id || selectedCase.id}</span>
+                            </div>
+                            <div className="doctor-info">
+                                <div className="doctor-name">Dr. {authStore.getUserName() || 'Surgeon'}</div>
+                                <div>Oral & Maxillofacial Surgery</div>
+                                <div style={{ marginTop: '0.25rem' }}>{new Date().toLocaleDateString()}</div>
+                            </div>
                         </div>
-                        <div className="doctor-info">
-                            <div className="doctor-name">Dr. {authStore.getUserName() || 'Surgeon'}</div>
-                            <div>Oral & Maxillofacial Surgery</div>
-                            <div style={{ marginTop: '0.25rem' }}>{new Date().toLocaleDateString()}</div>
-                        </div>
-                    </div>
 
-                    <div className="report-section">
-                        <h3 className="section-title">Patient Information</h3>
-                        <div className="info-grid">
-                            <div className="info-item">
-                                <label>Name</label>
-                                <span>{selectedCase.fname} {selectedCase.lname}</span>
-                            </div>
-                            <div className="info-item">
-                                <label>Age</label>
-                                <span>{selectedCase.patient_age || 'N/A'}</span>
-                            </div>
-                            <div className="info-item">
-                                <label>Tooth</label>
-                                <span>{selectedCase.tooth_number || 'N/A'}</span>
-                            </div>
-                            <div className="info-item">
-                                <label>Complaint</label>
-                                <span>{selectedCase.complaint || 'N/A'}</span>
+                        <div className="report-section">
+                            <h3 className="section-title">Patient Information</h3>
+                            <div className="info-grid">
+                                <div className="info-item">
+                                    <label>Name</label>
+                                    <span>{selectedCase.fname} {selectedCase.lname}</span>
+                                </div>
+                                <div className="info-item">
+                                    <label>Age</label>
+                                    <span>{selectedCase.patient_age || 'N/A'}</span>
+                                </div>
+                                <div className="info-item">
+                                    <label>Tooth</label>
+                                    <span>{selectedCase.tooth_number || 'N/A'}</span>
+                                </div>
+                                <div className="info-item">
+                                    <label>Complaint</label>
+                                    <span>{selectedCase.complaint || 'N/A'}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    {isReady ? (
-                        <>
+                        {isReady && (
                             <div className="report-section">
                                 <h3 className="section-title">Measurements</h3>
                                 <div className="measurements-grid">
@@ -234,14 +280,23 @@ const Reports = () => {
                                         <span className="measure-value">{metrics.nerve_distance} <span className="measure-unit">mm</span></span>
                                     </div>
                                 </div>
+                                <div className="report-recommendation">
+                                    <div className="recommendation-badge">Recommendation</div>
+                                    <p>
+                                        The measurements are within standard clinical ranges. However, for complex anatomical variations, we suggest:
+                                        <span className="recommendation-highlight">Consult a specialist for a secondary clinical evaluation.</span>
+                                    </p>
+                                </div>
                             </div>
+                        )}
+                    </div>
 
-                            <div className="export-options">
-                                <button className="export-btn"><FilePdf weight="duotone" /> PDF</button>
-                                <button className="export-btn"><Printer weight="duotone" /> Print</button>
-                                <button className="export-btn"><ShareNetwork weight="duotone" /> Share</button>
-                            </div>
-                        </>
+                    {isReady ? (
+                        <div className="export-options">
+                            <button className="export-btn" onClick={handleDownloadPDF}><FilePdf weight="duotone" /> PDF</button>
+                            <button className="export-btn" onClick={handlePrint}><Printer weight="duotone" /> Print</button>
+                            <button className="export-btn" onClick={handleShare}><ShareNetwork weight="duotone" /> Share</button>
+                        </div>
                     ) : (
                         <div className="report-section" style={{ textAlign: 'center', padding: '2rem', background: '#F8FAFC', borderRadius: '12px' }}>
                             <h3 style={{ color: '#64748B' }}>Analysis In Progress</h3>

@@ -48,7 +48,7 @@ object ImplantApiService {
 
     // For emulator use "10.0.2.2"; for physical device use your machine's LAN IP
 //    private const val BASE_URL = "http://10.0.2.2:8000"
-    private const val BASE_URL = "http://10.0.0.8:8000"
+    private const val BASE_URL = "http://10.69.28.197:8000"
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true

@@ -86,10 +86,10 @@ export default function Login() {
                         <span>ImplantAI</span>
                     </div>
 
-                    <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', color: '#64748B' }}>
+                    {/* <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.75rem', color: '#64748B' }}>
                         <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: connected ? '#10B981' : '#EF4444' }}></div>
                         API {connected ? 'Online' : 'Offline'}
-                    </div>
+                    </div> */}
 
                     <div className="form-header">
                         <h2>{mode === 'signin' ? 'Log In' : 'Create Account'}</h2>

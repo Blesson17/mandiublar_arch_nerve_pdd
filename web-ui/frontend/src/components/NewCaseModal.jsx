@@ -26,18 +26,10 @@ export default function NewCaseModal({ isOpen, onClose, onCaseCreated, existingP
         e.preventDefault();
         setIsLoading(true);
 
-        const selectedPatient = existingPatients.find((p) => p.key === selectedExistingPatient);
-        const resolvedFirstName = assignmentMode === 'existing' ? (selectedPatient?.fname || '') : formData.fname;
-        const resolvedLastName = assignmentMode === 'existing' ? (selectedPatient?.lname || '') : formData.lname;
-        const resolvedAge = assignmentMode === 'existing'
-            ? (selectedPatient?.patient_age || parseInt(formData.age) || 0)
-            : (parseInt(formData.age) || 0);
-
         const newCasePayload = {
-            // id: randomId, // Backend manages ID now
-            fname: resolvedFirstName,
-            lname: resolvedLastName,
-            patient_age: resolvedAge,
+            fname: formData.fname,
+            lname: formData.lname,
+            patient_age: parseInt(formData.age) || 0,
             // gender: formData.gender, // Not in schema, ignore
             // weight: formData.weight, // Not in schema, ignore
             case_type: formData.caseType, // Mapped from type -> case_type
@@ -71,28 +63,40 @@ export default function NewCaseModal({ isOpen, onClose, onCaseCreated, existingP
                         <label>Assign Patient</label>
                         <div className="case-type-group">
                             <div
+                                className={`type-option ${assignmentMode === 'new' ? 'active' : ''}`}
+                                onClick={() => setAssignmentMode('new')}
+                            >
+                                Create New
+                            </div>
+                            <div
                                 className={`type-option ${assignmentMode === 'existing' ? 'active' : ''}`}
                                 onClick={() => setAssignmentMode('existing')}
                                 style={{ opacity: existingPatients.length ? 1 : 0.5, pointerEvents: existingPatients.length ? 'auto' : 'none' }}
                             >
                                 Existing Patient
                             </div>
-                            <div
-                                className={`type-option ${assignmentMode === 'new' ? 'active' : ''}`}
-                                onClick={() => setAssignmentMode('new')}
-                            >
-                                Create New
-                            </div>
                         </div>
                     </div>
 
-                    {assignmentMode === 'existing' ? (
-                        <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    {assignmentMode === 'existing' && (
+                        <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                             <label>Select Existing Patient</label>
                             <select
                                 className="form-input"
                                 value={selectedExistingPatient}
-                                onChange={(e) => setSelectedExistingPatient(e.target.value)}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSelectedExistingPatient(val);
+                                    const p = existingPatients.find(item => item.key === val);
+                                    if (p) {
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            fname: p.fname || '',
+                                            lname: p.lname || '',
+                                            age: p.patient_age !== undefined ? String(p.patient_age) : '',
+                                        }));
+                                    }
+                                }}
                                 required
                             >
                                 <option value="">Select patient...</option>
@@ -103,45 +107,46 @@ export default function NewCaseModal({ isOpen, onClose, onCaseCreated, existingP
                                 ))}
                             </select>
                         </div>
-                    ) : (
-                    <div className="form-row">
-                        <div className="form-group">
-                            <label>First Name</label>
-                            <input type="text" className="form-input" placeholder="John" required
-                                value={formData.fname} onChange={e => handleInputChange('fname', e.target.value)} />
-                        </div>
-                        <div className="form-group">
-                            <label>Last Name</label>
-                            <input type="text" className="form-input" placeholder="Doe" required
-                                value={formData.lname} onChange={e => handleInputChange('lname', e.target.value)} />
-                        </div>
-                    </div>
                     )}
 
-                    {assignmentMode === 'new' && (
-                        <div className="form-row">
-                            <div className="form-group" style={{ flex: 1 }}>
-                                <label>Age</label>
-                                <input
-                                    type="number"
-                                    className="form-input"
-                                    placeholder="45"
-                                    min="0"
-                                    max="120"
-                                    required
-                                    value={formData.age}
-                                    onChange={e => handleInputChange('age', e.target.value)}
-                                />
+                    {(assignmentMode === 'new' || selectedExistingPatient) && (
+                        <>
+                            <div className="form-row">
+                                <div className="form-group">
+                                    <label>First Name</label>
+                                    <input type="text" className="form-input" placeholder="John" required
+                                        value={formData.fname} onChange={e => handleInputChange('fname', e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Last Name</label>
+                                    <input type="text" className="form-input" placeholder="Doe" required
+                                        value={formData.lname} onChange={e => handleInputChange('lname', e.target.value)} />
+                                </div>
                             </div>
-                        </div>
+                            <div className="form-row">
+                                <div className="form-group" style={{ flex: 1 }}>
+                                    <label>Patient Age</label>
+                                    <input
+                                        type="number"
+                                        className="form-input"
+                                        placeholder="45"
+                                        min="0"
+                                        max="120"
+                                        required
+                                        value={formData.age}
+                                        onChange={e => handleInputChange('age', e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        </>
                     )}
 
                     <div className="form-row">
-                        <div className="form-group">
+                        {/* <div className="form-group">
                             <label>Tooth Number / Area</label>
                             <input type="text" className="form-input" placeholder="e.g., #19, #30 or Lower Right"
                                 value={formData.tooth} onChange={e => handleInputChange('tooth', e.target.value)} />
-                        </div>
+                        </div> */}
                         <div className="form-group">
                             <label>Medical Alerts</label>
                             <select className="form-input" value={formData.medical} onChange={e => handleInputChange('medical', e.target.value)}>

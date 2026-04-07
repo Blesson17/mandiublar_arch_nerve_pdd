@@ -33,10 +33,10 @@ export default function Sidebar({ isOpen, onClose }) {
                     <SquaresFour size={20} />
                     <span>Dashboard</span>
                 </NavLink>
-                <NavLink to="/analysis" className="nav-item" onClick={onClose}>
+                {/* <NavLink to="/analysis" className="nav-item" onClick={onClose}>
                     <Heartbeat size={20} />
                     <span>Analysis</span>
-                </NavLink>
+                </NavLink> */}
                 <NavLink to="/reports" className="nav-item" onClick={onClose}>
                     <FileText size={20} />
                     <span>Reports</span>
